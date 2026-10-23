@@ -1,0 +1,52 @@
+[project]
+name = "termsnap"
+version = "0.1.0"
+description = "Запуск команд и разбор их вывода с ANSI-цветами в нейтральную модель (строки, фрагменты, стили) для документов и скриншотов"
+readme = "README.md"
+authors = [
+    { name = "Vic Khov", email = "victorkhovtko@gmail.com" }
+]
+keywords = ["terminal", "ansi", "sgr", "console", "screenshot", "subprocess"]
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.13"
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/m0rphed/termsnap"
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.40.2",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.1",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "TID", "PLR1714", "C4", "ANN001", "ANN201", "ANN202"]
+ignore = ["RUF001", "RUF002", "RUF003"]   # кириллица в строках и комментариях - норма
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"              # везде абсолютные импорты: termsnap....
+
+[tool.ruff.lint.isort]
+known-first-party = ["termsnap"]
+
+[tool.basedpyright]
+include = ["src"]
+typeCheckingMode = "standard"
+pythonVersion = "3.13"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["ANN"]   # в тестах аннотации возвращаемого значения не нужны
