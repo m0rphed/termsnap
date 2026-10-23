@@ -7,10 +7,12 @@
   подчеркивание, зачеркивание, обращенный вывод и их отключение;
 - ``\\r`` (возврат каретки: следующий текст затирает строку с начала, так рисуются индикаторы выполнения),
   ``\\n``, ``\\b`` и ``\\t``;
-- стирание строки (``ESC [ K``) и сдвиг курсора по строке (``ESC [ n C``, ``ESC [ n D``, ``ESC [ n G``).
+- стирание строки и экрана (``ESC [ K``, ``ESC [ J``) и перемещение курсора (``A``, ``B``, ``C``, ``D``, ``E``, ``F``,
+  ``G``, ``H``): за счет этого получаются конечные картинки у индикаторов выполнения и ``rich.live``.
 
-Все остальные последовательности (заголовок окна, режимы, перемещение курсора по вертикали) отбрасываются, не
-попадая в текст. Вывод, который переписывает экран целиком (редакторы, ``top``), требует настоящего эмулятора.
+Все остальные последовательности (заголовок окна, режимы, гиперссылки) отбрасываются, не попадая в текст. «Экран»
+начинается с первой строки вывода и не прокручивается; вывод, который переписывает весь экран (редакторы, ``top``),
+требует настоящего эмулятора.
 """
 
 import re
@@ -19,6 +21,7 @@ from itertools import groupby
 from operator import itemgetter
 
 from termsnap.model import PLAIN, Color, Indexed, Line, Rgb, Span, Style
+from termsnap.width import cluster_width, clusters
 
 type Cell = tuple[str, Style]
 
@@ -124,34 +127,50 @@ def apply_sgr(style: Style, params: str) -> Style:
 
 class _Canvas:
     """
-    Полотно: строки из ячеек «символ + стиль» и положение курсора в последней строке.
+    Полотно: строки из ячеек «символ + стиль» и положение курсора (строка и столбец).
+
+    Строки не ограничены по высоте и не прокручиваются, а «экран» начинается с первой строки вывода: так перемещения
+    курсора вверх и абсолютные позиции (``ESC [ r ; c H``) работают для коротких программ, которые перерисовывают
+    несколько последних строк (индикаторы выполнения, ``rich.live``).
     """
 
     def __init__(self) -> None:
         self.rows: list[list[Cell]] = [[]]
+        self.cursor_row = 0
         self.column = 0
         self.style = PLAIN
 
     @property
     def row(self) -> list[Cell]:
-        return self.rows[-1]
+        return self.rows[self.cursor_row]
+
+    def move_to_row(self, index: int) -> None:
+        self.cursor_row = max(0, index)
+        while self.cursor_row >= len(self.rows):
+            self.rows.append([])
 
     def write(self, text: str) -> None:
+        """
+        Печатает текст с положения курсора. Широкий символ (эмодзи, иероглиф) занимает две ячейки: во второй
+        стоит пустая строка, поэтому текст строки не меняется, а столбцы совпадают с терминалом.
+        """
         row = self.row
-        for char in text:
-            if self.column < len(row):
-                row[self.column] = (char, self.style)
-            else:
-                row.extend((" ", PLAIN) for _ in range(self.column - len(row)))
-                row.append((char, self.style))
-            self.column += 1
+        for cluster in clusters(text):
+            width = cluster_width(cluster)
+            if width == 0:
+                continue
+            row.extend((" ", PLAIN) for _ in range(self.column + width - len(row)))
+            row[self.column] = (cluster, self.style)
+            if width == 2:
+                row[self.column + 1] = ("", self.style)
+            self.column += width
 
     def control(self, char: str) -> None:
         match char:
             case "\r":
                 self.column = 0
             case "\n":  # терминал переводит строку вместе с возвратом каретки
-                self.rows.append([])
+                self.move_to_row(self.cursor_row + 1)
                 self.column = 0
             case "\b":
                 self.column = max(0, self.column - 1)
@@ -169,6 +188,19 @@ class _Canvas:
             case 2:
                 row.clear()
 
+    def erase_display(self, mode: int) -> None:
+        match mode:
+            case 0:  # от курсора до конца
+                self.erase_line(0)
+                del self.rows[self.cursor_row + 1 :]
+            case 1:  # от начала до курсора
+                for row in self.rows[: self.cursor_row]:
+                    row.clear()
+                self.erase_line(1)
+            case 2 | 3:  # весь экран
+                self.rows = [[]]
+                self.cursor_row = 0
+
     def csi(self, params: str, final: str) -> None:
         if params.startswith(("<", "=", ">", "?")):  # частные режимы терминала не меняют текст
             return
@@ -179,15 +211,30 @@ class _Canvas:
                 self.style = apply_sgr(self.style, params)
             case "K":
                 self.erase_line(numbers[0] if numbers else 0)
+            case "J":
+                self.erase_display(numbers[0] if numbers else 0)
             case "C":
                 self.column += count
             case "D":
                 self.column = max(0, self.column - count)
             case "G":
                 self.column = count - 1
+            case "A":
+                self.move_to_row(self.cursor_row - count)
+            case "B":
+                self.move_to_row(self.cursor_row + count)
+            case "E":
+                self.move_to_row(self.cursor_row + count)
+                self.column = 0
+            case "F":
+                self.move_to_row(self.cursor_row - count)
+                self.column = 0
+            case "H" | "f":
+                self.move_to_row((numbers[0] or 1) - 1 if numbers else 0)
+                self.column = (numbers[1] or 1) - 1 if len(numbers) > 1 else 0
 
     def lines(self) -> tuple[Line, ...]:
-        rows = self.rows[:-1] if not self.row else self.rows  # вывод закончился переводом строки (или пуст)
+        rows = self.rows[:-1] if not self.rows[-1] else self.rows  # вывод закончился переводом строки (или пуст)
         return tuple(
             Line(tuple(Span("".join(char for char, _ in cells), style) for style, cells in groupby(row, itemgetter(1))))
             for row in rows

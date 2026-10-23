@@ -7,6 +7,8 @@
 
 from dataclasses import dataclass
 
+from termsnap.width import text_width
+
 
 @dataclass(frozen=True, slots=True)
 class Indexed:
@@ -76,6 +78,13 @@ class Span:
     text: str
     style: Style = PLAIN
 
+    @property
+    def width(self) -> int:
+        """
+        Ширина фрагмента в клетках терминала (эмодзи и иероглифы занимают две клетки).
+        """
+        return text_width(self.text)
+
 
 @dataclass(frozen=True, slots=True)
 class Line:
@@ -92,5 +101,9 @@ class Line:
         """
         return "".join(span.text for span in self.spans)
 
-    def __len__(self) -> int:
-        return len(self.text)
+    @property
+    def width(self) -> int:
+        """
+        Ширина строки в клетках терминала.
+        """
+        return sum(span.width for span in self.spans)

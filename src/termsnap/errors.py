@@ -19,3 +19,14 @@ class RunTimeout(TermsnapError):
         self.argv = argv
         self.timeout = timeout
         self.output = output
+
+
+class FontNotFound(TermsnapError):
+    """
+    Не нашлось шрифта, пригодного для рисования: ни одно из запрошенных семейств не установлено или не содержит
+    нужных символов. ``problems`` - по строке на каждое проверенное семейство с причиной отказа.
+    """
+
+    def __init__(self, problems: list[str]) -> None:
+        super().__init__("подходящий моноширинный шрифт не найден:\n  " + "\n  ".join(problems))
+        self.problems = problems

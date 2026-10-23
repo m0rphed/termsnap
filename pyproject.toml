@@ -15,6 +15,11 @@ dependencies = []
 [project.urls]
 Repository = "https://github.com/m0rphed/termsnap"
 
+[project.optional-dependencies]
+png = [
+    "pillow>=12",
+]
+
 [build-system]
 requires = ["uv_build>=0.13.1,<0.14.0"]
 build-backend = "uv_build"
@@ -22,13 +27,16 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "basedpyright>=1.40.2",
+    "pillow>=12",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
+    "rich>=15.0.0",
     "ruff>=0.17.1",
 ]
 
 [tool.ruff]
 line-length = 120
+extend-exclude = ["examples/programs"]   # образцы для проверки (в том числе заведомо плохой код)
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "TID", "PLR1714", "C4", "ANN001", "ANN201", "ANN202"]
@@ -47,6 +55,7 @@ pythonVersion = "3.13"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["examples"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["ANN"]   # в тестах аннотации возвращаемого значения не нужны
