@@ -7,7 +7,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from termsnap.ansi import parse
 from termsnap.backends import Backend, PipeBackend, Request
 from termsnap.model import Line
 
@@ -19,6 +18,9 @@ _COLOR_ON = {"FORCE_COLOR": "1", "CLICOLOR_FORCE": "1"}
 class Capture:
     """
     Результат запуска: команда, код возврата, длительность, исходные байты и разобранные строки со стилями.
+    ``columns`` и ``rows`` - размер терминала, в котором запускалась команда (у канала он условный): по нему
+    рисуется окно целиком, а не только занятая выводом часть. Ширина строк везде считается в клетках терминала
+    (``termsnap.width``): так же ее считает эмулятор экрана, поэтому столбцы совпадают с настоящим терминалом.
     """
 
     argv: tuple[str, ...]
@@ -26,6 +28,8 @@ class Capture:
     duration: float
     output: bytes
     lines: tuple[Line, ...]
+    columns: int = 100
+    rows: int = 30
 
     @property
     def ok(self) -> bool:
@@ -73,7 +77,8 @@ def run(
 
     ``env`` - окружение процесса целиком (по умолчанию окружение текущего процесса); цвет включается или выключается
     через ``color`` (см. ``terminal_environment``). ``encoding`` - кодировка вывода программы; нераспознанные байты
-    заменяются символом подстановки. По умолчанию команда запускается через каналы (``PipeBackend``).
+    заменяются символом подстановки. По умолчанию команда запускается через каналы (``PipeBackend``); для программ,
+    которым нужен терминал, есть ``PtyBackend``.
     """
     command = tuple(argv)
     if not command:
@@ -86,6 +91,7 @@ def run(
         columns=columns,
         rows=rows,
     )
-    result = (backend or PipeBackend()).run(request)
-    text = result.output.decode(encoding, errors="replace")
-    return Capture(command, result.returncode, result.duration, result.output, parse(text))
+    backend = backend or PipeBackend()
+    result = backend.run(request)
+    lines = backend.interpret(result.output, request, encoding)
+    return Capture(command, result.returncode, result.duration, result.output, lines, columns, rows)

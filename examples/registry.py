@@ -59,3 +59,11 @@ REGISTRY = [
         tool="git",
     ),
 ]
+
+#: Программы, которым нужен терминал: в канале они дают бедный или бессмысленный вывод (rich без настроек, вывод
+#: абсолютными позициями курсора, вывод длиннее экрана). Запускаются только через ``PtyBackend``.
+PTY_REGISTRY = [
+    Program("rich_native", (PY, _script("rich_native.py"))),
+    Program("full_screen", (PY, _script("full_screen.py"))),
+    Program("long_output", (PY, _script("long_output.py"))),
+]

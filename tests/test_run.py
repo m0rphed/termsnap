@@ -107,12 +107,15 @@ def test_terminal_environment_overrides_color_variables_of_the_base():
 
 
 def test_a_custom_backend_can_be_used():
-    from termsnap import RawResult, Request
+    from termsnap import Line, RawResult, Request, parse
 
     class Fake:
         def run(self, request: Request) -> RawResult:
             assert request.argv == ("fake", "arg")
             return RawResult(b"\x1b[32mgreen\n", 0, 0.5)
+
+        def interpret(self, output: bytes, request: Request, encoding: str) -> tuple[Line, ...]:
+            return parse(output.decode(encoding))
 
     capture = run(["fake", "arg"], backend=Fake())
     assert capture.text == "green"
@@ -121,3 +124,8 @@ def test_a_custom_backend_can_be_used():
 
 def test_pipe_backend_is_the_default():
     assert run(python("print(1)"), backend=PipeBackend()).text == "1"
+
+
+def test_capture_remembers_the_terminal_size():
+    capture = run(python("print(1)"), columns=90, rows=20)
+    assert (capture.columns, capture.rows) == (90, 20)

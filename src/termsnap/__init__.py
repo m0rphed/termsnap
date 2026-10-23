@@ -10,7 +10,7 @@ termsnap - запуск команд и разбор их вывода с ANSI-�
 """
 
 from termsnap.ansi import apply_sgr, parse
-from termsnap.backends import Backend, PipeBackend, RawResult, Request
+from termsnap.backends import Backend, PipeBackend, PtyBackend, RawResult, Request
 from termsnap.errors import RunTimeout, TermsnapError
 from termsnap.model import PLAIN, Color, Indexed, Line, Rgb, Span, Style
 from termsnap.runner import Capture, run, terminal_environment
@@ -26,6 +26,7 @@ __all__ = [
     "Indexed",
     "Line",
     "PipeBackend",
+    "PtyBackend",
     "RawResult",
     "Request",
     "Rgb",

@@ -118,7 +118,7 @@ def render_image(
     row_height = math.ceil((ascent + descent) * line_spacing)
     margin = padding * scale
     width_cells = columns if columns is not None else max((line.width for line in lines), default=1)
-    width = math.ceil(margin * 2 + max(width_cells, 1) * cell)
+    width = round(margin + max(width_cells, 1) * cell) + margin  # правый край совпадает с краем фона последней клетки
     height = margin * 2 + max(len(lines), 1) * row_height
 
     image = Image.new("RGB", (width, height), _rgb(theme.background))

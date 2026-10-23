@@ -6,8 +6,10 @@ import shutil
 import subprocess
 import time
 
+from termsnap.ansi import parse
 from termsnap.backends.base import RawResult, Request
 from termsnap.errors import RunTimeout
+from termsnap.model import Line
 
 
 class PipeBackend:
@@ -40,3 +42,6 @@ class PipeBackend:
                 assert request.timeout is not None
                 raise RunTimeout(request.argv, request.timeout, output) from expired
         return RawResult(output, process.returncode, time.perf_counter() - started)
+
+    def interpret(self, output: bytes, request: Request, encoding: str) -> tuple[Line, ...]:
+        return parse(output.decode(encoding, errors="replace"))

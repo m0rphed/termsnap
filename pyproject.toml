@@ -19,6 +19,10 @@ Repository = "https://github.com/m0rphed/termsnap"
 png = [
     "pillow>=12",
 ]
+pty = [
+    "pyte>=0.8.2",
+    "pywinpty>=3 ; sys_platform == 'win32'",
+]
 
 [build-system]
 requires = ["uv_build>=0.13.1,<0.14.0"]
@@ -28,8 +32,10 @@ build-backend = "uv_build"
 dev = [
     "basedpyright>=1.40.2",
     "pillow>=12",
+    "pyte>=0.8.2",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
+    "pywinpty>=3 ; sys_platform == 'win32'",
     "rich>=15.0.0",
     "ruff>=0.17.1",
 ]
