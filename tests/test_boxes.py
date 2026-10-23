@@ -114,6 +114,30 @@ def test_rounded_corner_is_not_square():
     assert any(lit(rounded, WIDTH - 1, y) for y in range(HEIGHT))
 
 
+@pytest.mark.parametrize("light", [1, 2, 3])
+@pytest.mark.parametrize(
+    ("char", "vertical_row", "horizontal_column"),
+    [("╭", HEIGHT - 1, WIDTH - 1), ("╮", HEIGHT - 1, 0), ("╰", 0, WIDTH - 1), ("╯", 0, 0)],
+)
+def test_rounded_corner_ends_join_the_straight_lines_of_the_neighbours(char, vertical_row, horizontal_column, light):
+    corner = draw(char, light=light)
+    vertical = draw("│", light=light)
+    horizontal = draw("─", light=light)
+    assert [corner.getpixel((x, vertical_row)) for x in range(WIDTH)] == [
+        vertical.getpixel((x, vertical_row)) for x in range(WIDTH)
+    ]
+    assert [corner.getpixel((horizontal_column, y)) for y in range(HEIGHT)] == [
+        horizontal.getpixel((horizontal_column, y)) for y in range(HEIGHT)
+    ]
+
+
+def test_rounded_corner_is_antialiased_and_symmetric_to_its_mirror():
+    corner = draw("╭")
+    assert len({corner.getpixel((x, y)) for x in range(WIDTH) for y in range(HEIGHT)}) > 3
+    mirrored = draw("╮").transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    assert corner.tobytes() == mirrored.tobytes()
+
+
 def test_full_block_and_halves_fill_the_expected_part():
     full = draw("█")
     assert all(lit(full, x, y) for x in range(WIDTH) for y in range(HEIGHT))

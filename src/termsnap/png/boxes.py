@@ -7,6 +7,7 @@
 делаем и мы: символ закрашивает прямоугольник клетки (от верха строки до низа), и соседние клетки смыкаются.
 """
 
+import math
 import unicodedata
 from dataclasses import dataclass
 from functools import cache
@@ -104,6 +105,7 @@ def _draw_lines(
     arms: Arms,
     box: tuple[float, float, float, float],
     color: tuple[int, int, int],
+    background: tuple[int, int, int],
     light: int,
 ) -> None:
     x0, y0, x1, y1 = box
@@ -112,7 +114,7 @@ def _draw_lines(
     offset = max(2.0, light * 1.6)  # половина расстояния между линиями двойной рамки
 
     if arms.arc and (arms.up or arms.down) and (arms.left or arms.right):
-        _draw_arc(draw, arms, box, color, light)
+        _draw_arc(draw, arms, box, color, background, light)
         return
 
     # одинарные и толстые рукава: прямоугольник от края клетки через центр
@@ -171,32 +173,67 @@ def _draw_arc(
     arms: Arms,
     box: tuple[float, float, float, float],
     color: tuple[int, int, int],
+    background: tuple[int, int, int],
     light: int,
 ) -> None:
     """
-    Скругленный угол (U+256D-2570): четверть эллипса между серединами сторон клетки и прямые концы до границы.
+    Скругленный угол (U+256D-2570): дуга окружности, которая соединяет середины двух соседних сторон клетки.
+    Линия сглажена; ее ось совпадает с осью прямых линий в соседних клетках (те же пиксельные границы), поэтому
+    стык незаметен.
     """
     x0, y0, x1, y1 = box
+    t = light
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-    w, h = x1 - x0, y1 - y0
-    if arms.down and arms.right:
-        bbox, angles = (cx, cy, cx + w, cy + h), (180, 270)
-    elif arms.down and arms.left:
-        bbox, angles = (cx - w, cy, cx, cy + h), (270, 360)
-    elif arms.up and arms.right:
-        bbox, angles = (cx, cy - h, cx + w, cy), (90, 180)
-    else:
-        bbox, angles = (cx - w, cy - h, cx, cy), (0, 90)
-    draw.arc(bbox, angles[0], angles[1], fill=color, width=light)
-    t = light / 2
-    if arms.down:
-        _fill(draw, cx - t, cy + h / 2 - 1, cx + t, y1, color)
-    if arms.up:
-        _fill(draw, cx - t, y0, cx + t, cy - h / 2 + 1, color)
-    if arms.right:
-        _fill(draw, cx + w / 2 - 1, cy - t, x1, cy + t, color)
-    if arms.left:
-        _fill(draw, x0, cy - t, cx - w / 2 + 1, cy + t, color)
+    px0, py0, px1, py1 = round(x0), round(y0), round(x1), round(y1)
+    left, right = round(cx - t / 2), round(cx + t / 2)  # столбцы вертикальной линии, как у ``_fill``
+    top, bottom = round(cy - t / 2), round(cy + t / 2)  # строки горизонтальной линии
+    coverage = _arc_coverage(
+        px1 - px0, py1 - py0, (left - px0, right - px0), (top - py0, bottom - py0), bool(arms.right), bool(arms.down)
+    )
+    for (i, j), share in coverage.items():
+        draw.point((px0 + i, py0 + j), fill=_blend(color, background, share))
+
+
+_SUBSAMPLES = 5
+
+
+@cache
+def _arc_coverage(
+    width: int, height: int, columns: tuple[int, int], rows: tuple[int, int], right: bool, down: bool
+) -> dict[tuple[int, int], float]:
+    """
+    Доли закраски пикселей клетки ``width`` x ``height`` под скругленным углом (``right``, ``down`` - куда идут
+    линии из центра). ``columns`` и ``rows`` - границы вертикальной и горизонтальной линий. Угол - дуга окружности
+    радиуса в полклетки по ширине и прямые концы до границ клетки.
+    """
+    half = max(columns[1] - columns[0], rows[1] - rows[0]) / 2
+    xc, yc = sum(columns) / 2, sum(rows) / 2
+    step_x, step_y = (1 if right else -1), (1 if down else -1)
+    # без одного пикселя до границы: у дуги остается прямой конец, и в соседнюю клетку линия входит ровно
+    radius = max(min(abs((width if right else 0) - xc), abs((height if down else 0) - yc)) - 1, 1)
+    centre_x, centre_y = xc + step_x * radius, yc + step_y * radius
+    result: dict[tuple[int, int], float] = {}
+    for j in range(height):
+        for i in range(width):
+            hits = 0
+            for sy in range(_SUBSAMPLES):
+                py = j + (sy + 0.5) / _SUBSAMPLES
+                along_y = (py - centre_y) * step_y  # <= 0 до центра окружности (со стороны угла клетки - больше 0)
+                for sx in range(_SUBSAMPLES):
+                    px = i + (sx + 0.5) / _SUBSAMPLES
+                    along_x = (px - centre_x) * step_x
+                    if along_x <= 0 and along_y <= 0:  # участок дуги
+                        inside = abs(math.hypot(px - centre_x, py - centre_y) - radius) <= half
+                    elif along_y > 0 >= along_x:  # прямой конец вертикальной линии
+                        inside = abs(px - xc) <= half
+                    elif along_x > 0 >= along_y:  # прямой конец горизонтальной линии
+                        inside = abs(py - yc) <= half
+                    else:
+                        inside = False
+                    hits += inside
+            if hits:
+                result[i, j] = hits / _SUBSAMPLES**2
+    return result
 
 
 def draw_cell(
@@ -221,7 +258,7 @@ def draw_cell(
         arms = arms_of(char)
         if arms is None:
             return False
-        _draw_lines(draw, arms, box, foreground, light)
+        _draw_lines(draw, arms, box, foreground, background, light)
     elif code == 0x2580:  # верхняя половина
         _fill(draw, x0, y0, x1, y0 + h / 2, foreground)
     elif 0x2581 <= code <= 0x2588:  # нижние доли от 1/8 до целого
