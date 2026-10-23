@@ -20,7 +20,7 @@ def test_rgb_hex():
 def test_line_text_and_length():
     line = Line((Span("ab"), Span("cd", Style(bold=True))))
     assert line.text == "abcd"
-    assert len(line) == 4
+    assert line.width == 4
 
 
 def test_values_are_hashable_and_comparable():

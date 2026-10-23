@@ -128,3 +128,42 @@ def test_stray_control_characters_are_dropped():
 
 def test_non_ascii_text_is_kept():
     assert [line.text for line in parse(f"{ESC}[36mПривет, мир{ESC}[0m")] == ["Привет, мир"]
+
+
+# --------------------------------------------------------------------------- перемещение курсора и стирание экрана
+def texts(text: str) -> list[str]:
+    return [line.text for line in parse(text)]
+
+
+def test_cursor_up_overwrites_earlier_lines():
+    assert texts("one\ntwo\n" + ESC + "[2A\rONE\nTWO\n") == ["ONE", "TWO"]
+
+
+def test_redrawing_the_last_lines_leaves_only_the_final_frame():
+    frame = ESC + "[2K" + "{}\n"
+    first = frame.format("progress 1") + frame.format("other 1")
+    second = ESC + "[2A" + frame.format("progress 2") + frame.format("other 2")
+    assert texts("start\n" + first + second) == ["start", "progress 2", "other 2"]
+
+
+def test_cursor_down_extends_the_screen():
+    assert texts("a" + ESC + "[2Bb") == ["a", "", " b"]
+
+
+def test_next_and_previous_line_move_to_the_line_start():
+    assert texts("abc\ndef" + ESC + "[1Fx") == ["xbc", "def"]
+    assert texts("abc" + ESC + "[1Ex") == ["abc", "x"]
+
+
+def test_erase_below_and_whole_screen():
+    assert texts("a\nb\nc\n" + ESC + "[2A" + ESC + "[J") == ["a"]
+    assert texts("a\nb\n" + ESC + "[2J" + "new") == ["new"]
+
+
+def test_erase_above_blanks_earlier_lines():
+    assert texts("a\nb\nc" + ESC + "[1J") == ["", "", " "]
+
+
+def test_absolute_position_counts_from_the_first_line():
+    assert texts("12345\nabcde\n" + ESC + "[1;3Hx" + ESC + "[2;2Hy") == ["12x45", "aycde"]
+    assert texts("abc" + ESC + "[Hx") == ["xbc"]
