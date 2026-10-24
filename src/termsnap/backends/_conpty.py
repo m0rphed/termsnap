@@ -9,7 +9,8 @@ ConPTY закрывает канал вывода не сразу после в�
 import time
 from threading import Thread
 
-from winpty import PtyProcess
+# pywinpty ставится только в Windows, а типы проверяются и в Linux и macOS (CI): там модуль не импортируется
+from winpty import PtyProcess  # pyright: ignore[reportMissingImports]
 
 from termsnap.backends._typist import Typist
 from termsnap.backends.base import Request

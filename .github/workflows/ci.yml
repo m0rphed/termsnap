@@ -1,0 +1,54 @@
+# Тонкая обертка: вся логика проверок живет в ci/run.py, чтобы проект не зависел от одного сервиса CI.
+# То же самое без GitHub: `python ci/run.py all` или `python ci/run.py docker` (см. README, раздел «Проверки и CI»).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Новый коммит в ту же ветку отменяет еще идущую проверку предыдущего.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Основная проверка: на каждый push и pull request. Запускается и локально: `act -j linux`.
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: ${{ !env.ACT }} # в act хранилища кэша нет
+      - run: uv run --no-project python ci/run.py system-deps
+      - run: uv run --no-project python ci/run.py all
+
+  # Windows и macOS: только после слияния и по кнопке, чтобы не тратить минуты на каждый pull request.
+  # Локально эти системы не запустить (act умеет только Linux-контейнеры).
+  desktop:
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+        python: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - run: uv run --no-project python ci/run.py all
