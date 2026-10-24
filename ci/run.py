@@ -3,7 +3,7 @@
 
 GitHub Actions, Docker, ``act`` и вы сами запускают одно и то же, поэтому от какого-то одного сервиса проект не
 зависит: любой другой (Forgejo, GitLab, свой сервер) достаточно научить вызывать эту команду. Нужны только Python
-(стандартная библиотека, 3.13 и новее) и ``uv``.
+(стандартная библиотека, 3.12 и новее) и ``uv``.
 
     python ci/run.py all                  # все проверки: стиль, типы, тесты
     python ci/run.py lint                 # ruff format --check и ruff check
@@ -11,7 +11,7 @@ GitHub Actions, Docker, ``act`` и вы сами запускают одно и 
     python ci/run.py test -- -k pty -x    # pytest (все, что после --, уходит в pytest)
     python ci/run.py --python 3.13 all    # другая версия Python, свое окружение .venv-ci-3.13
     python ci/run.py system-deps          # системные пакеты для Linux (шрифты, htop), для CI и Docker
-    python ci/run.py docker 3.13 3.14     # то же в контейнерах: Linux на любой машине, где есть Docker или Podman
+    python ci/run.py docker 3.12 3.13 3.14     # то же в контейнерах: Linux на любой машине, где есть Docker или Podman
 """
 
 import argparse
@@ -28,7 +28,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 #: Версии Python, на которых проект проверяется по умолчанию.
-PYTHONS = ("3.13", "3.14")
+PYTHONS = ("3.12", "3.13", "3.14")
 
 #: Системные пакеты Debian и Ubuntu: шрифт с кириллицей для PNG и программы, которые снимаются в тестах.
 APT_PACKAGES = ("fontconfig", "fonts-dejavu-core", "procps", "htop")

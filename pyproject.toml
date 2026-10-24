@@ -9,7 +9,7 @@ authors = [
 keywords = ["terminal", "ansi", "sgr", "console", "screenshot", "subprocess"]
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = []
 
 [project.urls]
@@ -57,7 +57,7 @@ known-first-party = ["termsnap"]
 [tool.basedpyright]
 include = ["src"]
 typeCheckingMode = "standard"
-pythonVersion = "3.13"
+pythonVersion = "3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

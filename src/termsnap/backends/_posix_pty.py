@@ -45,7 +45,7 @@ def run(executable: str, request: Request) -> tuple[bytes, int, bool]:
         os.close(slave)
 
     chunks: list[bytes] = []
-    last_output = time.monotonic()
+    last_output = time.perf_counter()
     typist = Typist(request, started=last_output)
     responder = Responder(request.columns, request.rows)  # в отличие от ConPTY, сам pty на запросы не отвечает
     deadline = None if request.timeout is None else last_output + request.timeout
@@ -57,7 +57,7 @@ def run(executable: str, request: Request) -> tuple[bytes, int, bool]:
 
     try:
         while True:
-            now = time.monotonic()
+            now = time.perf_counter()
             remaining = None if deadline is None else deadline - now
             if remaining is not None and remaining <= 0:
                 timed_out = True
@@ -80,7 +80,7 @@ def run(executable: str, request: Request) -> tuple[bytes, int, bool]:
             if not data:
                 break
             chunks.append(data)
-            last_output = time.monotonic()
+            last_output = time.perf_counter()
             reply = responder.feed(data)
             if reply:
                 os.write(master, reply)

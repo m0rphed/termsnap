@@ -1,6 +1,6 @@
 # Linux-проверки в контейнере: те же команды, что в CI, но на любой машине с Docker или Podman.
 #
-#   python ci/run.py docker 3.13 3.14
+#   python ci/run.py docker 3.12 3.13 3.14
 #
 # Собирать нужно из корня проекта (контекст сборки - весь проект).
 # syntax=docker/dockerfile:1

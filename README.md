@@ -204,7 +204,7 @@ python ci/run.py --python 3.13 all    # другая версия Python, отд
 ### Linux без GitHub: Docker или Podman
 
 ```bash
-python ci/run.py docker 3.13 3.14         # образ ci/Dockerfile для каждой версии и ``all`` внутри
+python ci/run.py docker 3.12 3.13 3.14         # образ ci/Dockerfile для каждой версии и ``all`` внутри
 python ci/run.py docker --engine podman
 ```
 
@@ -215,7 +215,7 @@ python ci/run.py docker --engine podman
 
 ### GitHub Actions и act
 
-`.github/workflows/ci.yml` - только обертка над `ci/run.py`: задача `linux` (Python 3.13 и 3.14) идет на каждый push и
+`.github/workflows/ci.yml` - только обертка над `ci/run.py`: задача `linux` (Python 3.12, 3.13 и 3.14) идет на каждый push и
 pull request, задача `desktop` (Windows и macOS) - только после слияния в `main` и по кнопке. Действия закреплены
 по коммиту. Linux-задачу можно прогнать локально через [act](https://github.com/nektos/act) (нужен Docker; образ
 задан в `.actrc`):

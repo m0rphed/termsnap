@@ -33,7 +33,7 @@ def run(executable: str, request: Request) -> tuple[bytes, int, bool]:
         dimensions=(request.rows, request.columns),
     )
     chunks: list[str] = []
-    last_output = time.monotonic()
+    last_output = time.perf_counter()
     typist = Typist(request, started=last_output)
 
     def pump() -> None:
@@ -43,13 +43,13 @@ def run(executable: str, request: Request) -> tuple[bytes, int, bool]:
                 chunks.append(process.read(65536))
             except (EOFError, OSError):
                 return
-            last_output = time.monotonic()
+            last_output = time.perf_counter()
 
     # поток-демон: он может дожить до закрытия канала уже после возврата из функции
     Thread(target=pump, daemon=True).start()
-    deadline = None if request.timeout is None else time.monotonic() + request.timeout
+    deadline = None if request.timeout is None else time.perf_counter() + request.timeout
     while True:
-        now = time.monotonic()
+        now = time.perf_counter()
         if deadline is not None and now >= deadline:
             process.terminate(force=True)
             assert request.timeout is not None
