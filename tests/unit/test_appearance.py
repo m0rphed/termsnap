@@ -8,6 +8,7 @@ import pytest
 
 pytest.importorskip("PIL")
 
+from picture import picture
 from PIL import Image
 
 from termsnap import DARK, LIGHT, Indexed, Line, Rgb, Span, Style
@@ -102,31 +103,31 @@ def line_with_background(color: Indexed) -> list[Line]:
     return [Line((Span("    ", Style(bg=color)),))]
 
 
-def test_custom_theme_object_colours_the_picture(system_fonts: FontSet):
+def test_custom_theme_object_colours_the_picture(bundled_fonts: FontSet):
     custom = DARK.derive(background="#101010", ansi={"red": "#12ab34"})
-    image = render_image(line_with_background(Indexed(1)), theme=custom, fonts=system_fonts, scale=1, padding=4)
+    image = render_image(line_with_background(Indexed(1)), theme=custom, fonts=bundled_fonts, scale=1, padding=4)
     assert image.getpixel((0, 0)) == (16, 16, 16)  # фон темы в поле
     middle = (image.width // 2, image.height // 2)
     assert image.getpixel(middle) == (0x12, 0xAB, 0x34)  # красный из темы, а не из DARK
 
 
-def test_theme_can_be_given_by_name_or_as_a_mapping(system_fonts: FontSet):
+def test_theme_can_be_given_by_name_or_as_a_mapping(bundled_fonts: FontSet):
     lines = line_with_background(Indexed(2))
-    by_name = render_image(lines, theme="light", fonts=system_fonts, scale=1)
-    by_object = render_image(lines, theme=LIGHT, fonts=system_fonts, scale=1)
+    by_name = render_image(lines, theme="light", fonts=bundled_fonts, scale=1)
+    by_object = render_image(lines, theme=LIGHT, fonts=bundled_fonts, scale=1)
     assert by_name.tobytes() == by_object.tobytes()
-    by_mapping = render_image(lines, theme={"base": "light", "background": "#fafafa"}, fonts=system_fonts, scale=1)
+    by_mapping = render_image(lines, theme={"base": "light", "background": "#fafafa"}, fonts=bundled_fonts, scale=1)
     assert by_mapping.getpixel((0, 0)) == (0xFA, 0xFA, 0xFA)
     assert by_mapping.getpixel((by_mapping.width // 2, by_mapping.height // 2)) == rgb(LIGHT.ansi[2])
 
 
-def test_unknown_theme_name_is_reported_before_drawing(system_fonts: FontSet):
+def test_unknown_theme_name_is_reported_before_drawing(bundled_fonts: FontSet):
     with pytest.raises(ValueError, match="solarized"):
-        render_image([Line((Span("x"),))], theme="solarized", fonts=system_fonts)
+        render_image([Line((Span("x"),))], theme="solarized", fonts=bundled_fonts)
 
 
-def test_theme_reaches_png_bytes_too(system_fonts: FontSet):
-    data = render_png(line_with_background(Indexed(1)), theme={"background": "#010203"}, fonts=system_fonts, scale=1)
+def test_theme_reaches_png_bytes_too(bundled_fonts: FontSet):
+    data = render_png(line_with_background(Indexed(1)), theme={"background": "#010203"}, fonts=bundled_fonts, scale=1)
     import io
 
     assert Image.open(io.BytesIO(data)).convert("RGB").getpixel((0, 0)) == (1, 2, 3)
@@ -143,54 +144,53 @@ def test_font_family_name_gives_the_same_picture_as_the_font_set(system_fonts: F
     assert by_set.tobytes() == by_name.tobytes() == by_list.tobytes()
 
 
-def test_font_from_files_is_accepted_like_any_other_spec(system_fonts: FontSet):
-    lines = [Line((Span("Привет"),))]
-    custom = from_files(system_fonts.regular.path)
+def test_font_from_files_is_accepted_like_any_other_spec(bundled_fonts: FontSet):
+    lines = [Line((Span("hello"),))]
+    custom = from_files(bundled_fonts.regular.path)
     assert (
         render_image(lines, fonts=custom, scale=1).tobytes()
-        == render_image(lines, fonts=system_fonts, scale=1).tobytes()
+        == render_image(lines, fonts=bundled_fonts, scale=1).tobytes()
     )
 
 
-def test_missing_family_is_an_error_with_the_reason(system_fonts: FontSet):
+def test_missing_family_is_an_error_with_the_reason():
     with pytest.raises(FontNotFound, match="Not A Font At All: не установлен"):
         render_image([Line((Span("x"),))], fonts="Not A Font At All")
 
 
-def test_overriding_the_main_font_keeps_the_automatic_fallback_for_other_symbols(system_fonts: FontSet):
-    # в тексте есть символы, которых может не быть в выбранном шрифте (эмодзи, иероглифы): это не ошибка
-    lines = [Line((Span("ok ✅ 日本 → ░▒▓ ┌─┐"),))]
-    image = render_image(lines, fonts=system_fonts.family, scale=1)
-    assert image.width > 100
+@pytest.mark.parametrize("symbol", ["✅", "\N{RIGHTWARDS ARROW}", "日"])
+def test_overriding_the_main_font_keeps_the_automatic_fallback_for_other_symbols(system_fonts: FontSet, symbol: str):
+    # символа нет в основном шрифте: пока запасной шрифт не найден, на его месте рисуется знак "нет глифа" (как у
+    # символа с кодом, которого нет ни в одном шрифте); найден - картинка другая
+    def cell_of(text: str) -> bytes:
+        return render_image([Line((Span(text),))], fonts=system_fonts.family, scale=1, padding=0).tobytes()
+
+    assert cell_of(symbol) != cell_of("􏿿"), f"для {symbol!r} не нашлось запасного шрифта"
 
 
 # --- поля ---
 
 
-def test_padding_sets_the_margins_on_all_four_sides(system_fonts: FontSet):
-    lines = [Line((Span("abcdef"),)), Line((Span("ab"),))]
-    bare = render_image(lines, fonts=system_fonts, scale=1, padding=0)
-    for padding in (1, 4, 16, 40):
-        padded = render_image(lines, fonts=system_fonts, scale=1, padding=padding)
-        assert (padded.width, padded.height) == (bare.width + 2 * padding, bare.height + 2 * padding)
-
-
-def test_padding_is_in_screen_pixels_and_multiplied_by_the_scale(system_fonts: FontSet):
+def test_padding_is_in_screen_pixels_and_multiplied_by_the_scale(bundled_fonts: FontSet):
     lines = [Line((Span("abc"),))]
-    bare = render_image(lines, fonts=system_fonts, scale=2, padding=0)
-    padded = render_image(lines, fonts=system_fonts, scale=2, padding=5)
+    bare = render_image(lines, fonts=bundled_fonts, scale=2, padding=0)
+    padded = render_image(lines, fonts=bundled_fonts, scale=2, padding=5)
     assert (padded.width - bare.width, padded.height - bare.height) == (20, 20)
 
 
-def test_text_starts_at_the_padding_and_zero_padding_touches_the_edge(system_fonts: FontSet):
+def test_the_cell_background_starts_right_after_the_padding_and_without_padding_touches_the_edge(
+    bundled_fonts: FontSet,
+):
+    legend = {".": DARK.background.channels, "R": DARK.ansi[1].channels}
     lines = [Line((Span("   ", Style(bg=Indexed(1))),))]
-    flush = render_image(lines, fonts=system_fonts, scale=1, padding=0)
-    assert flush.getpixel((0, 0)) == rgb(DARK.ansi[1])  # фон ячейки доходит до самого угла
-    padded = render_image(lines, fonts=system_fonts, scale=1, padding=6)
-    assert padded.getpixel((5, 5)) == rgb(DARK.background)
-    assert padded.getpixel((6, 6)) == rgb(DARK.ansi[1])
+    flush = render_image(lines, fonts=bundled_fonts, scale=1, padding=0)
+    assert picture(flush, legend, box=(0, 0, flush.width, 1)) == "R" * flush.width  # фон доходит до самого угла
+    padded = render_image(lines, fonts=bundled_fonts, scale=1, padding=6)
+    above, first_row = (picture(padded, legend, box=(0, y, padded.width, y + 1)) for y in (5, 6))
+    assert above == "." * padded.width  # строка над полем: только фон картинки
+    assert first_row == "." * 6 + "R" * (padded.width - 12) + "." * 6
 
 
-def test_negative_padding_is_rejected(system_fonts: FontSet):
+def test_negative_padding_is_rejected(bundled_fonts: FontSet):
     with pytest.raises(ValueError, match="отрицательн"):
-        render_image([Line((Span("x"),))], fonts=system_fonts, padding=-1)
+        render_image([Line((Span("x"),))], fonts=bundled_fonts, padding=-1)

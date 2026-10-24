@@ -1,25 +1,38 @@
+"""
+Псевдографика, которую библиотека рисует сама: рамки, блоки и точки Брайля.
+
+Ожидаемые клетки записаны рисунками (``tests/picture.py``): ``#`` - цвет текста, ``.`` - фон, ``+`` - сглаженный
+пиксель (в легенде такого цвета нет). Клетки маленькие, чтобы рисунок помещался перед глазами: 7 x 9 для линий и
+8 x 8 для блоков.
+"""
+
+import unicodedata
+
 import pytest
 
 pytest.importorskip("PIL")
 
+from picture import art, picture
 from PIL import Image, ImageDraw
 
 from termsnap.png.boxes import Arms, arms_of, draw_cell, is_box_char
 
-FG = (240, 10, 10)
-BG = (0, 0, 0)
-WIDTH, HEIGHT = 11, 21
-CX, CY = WIDTH // 2, HEIGHT // 2
+BACKGROUND = (0, 0, 0)
+INK = (200, 200, 200)  # серый, чтобы доли смеси с фоном были круглыми числами (четверть от 200 - это 50)
+LEGEND = {".": BACKGROUND, "#": INK}
 
 
-def draw(char: str, *, light: int = 1) -> Image.Image:
-    image = Image.new("RGB", (WIDTH, HEIGHT), BG)
-    assert draw_cell(ImageDraw.Draw(image), char, (0, 0, WIDTH, HEIGHT), FG, BG, light)
-    return image
+def drawn(char: str, width: int, height: int, *, light: int = 1) -> str:
+    """
+    Клетка ``width`` x ``height`` с символом ``char`` в виде рисунка.
+    """
+    image = Image.new("RGB", (width, height), BACKGROUND)
+    assert draw_cell(ImageDraw.Draw(image), char, (0, 0, width, height), INK, BACKGROUND, light)
+    return picture(image, LEGEND)
 
 
-def lit(image: Image.Image, x: int, y: int) -> bool:
-    return image.getpixel((x, y)) == FG
+def name(char: str) -> str:
+    return unicodedata.name(char).lower().replace(" ", "-")
 
 
 @pytest.mark.parametrize(
@@ -63,55 +76,201 @@ def test_which_characters_are_drawn_by_the_library():
     assert not is_box_char("ab")
 
 
-def test_vertical_line_runs_through_the_whole_cell_height_so_rows_join():
-    image = draw("│")
-    assert all(lit(image, CX, y) for y in range(HEIGHT))
-    assert not lit(image, 0, CY)
+# --- линии: клетка 7 x 9, тонкая линия в один пиксель; центр клетки - столбец 3 и строка 4 ---
+
+LINES = {
+    "│": """
+        ...#...
+        ...#...
+        ...#...
+        ...#...
+        ...#...
+        ...#...
+        ...#...
+        ...#...
+        ...#...
+    """,
+    "─": """
+        .......
+        .......
+        .......
+        .......
+        #######
+        .......
+        .......
+        .......
+        .......
+    """,
+    "┌": """
+        .......
+        .......
+        .......
+        .......
+        ...####
+        ...#...
+        ...#...
+        ...#...
+        ...#...
+    """,
+    "┘": """
+        ...#...
+        ...#...
+        ...#...
+        ...#...
+        ####...
+        .......
+        .......
+        .......
+        .......
+    """,
+    "├": """
+        ...#...
+        ...#...
+        ...#...
+        ...#...
+        ...####
+        ...#...
+        ...#...
+        ...#...
+        ...#...
+    """,
+    "┼": """
+        ...#...
+        ...#...
+        ...#...
+        ...#...
+        #######
+        ...#...
+        ...#...
+        ...#...
+        ...#...
+    """,
+    "╴": """
+        .......
+        .......
+        .......
+        .......
+        ####...
+        .......
+        .......
+        .......
+        .......
+    """,
+    # толстая линия втрое шире тонкой (2 * 1 + 1)
+    "┃": """
+        ..###..
+        ..###..
+        ..###..
+        ..###..
+        ..###..
+        ..###..
+        ..###..
+        ..###..
+        ..###..
+    """,
+    "╋": """
+        ..###..
+        ..###..
+        ..###..
+        #######
+        #######
+        #######
+        ..###..
+        ..###..
+        ..###..
+    """,
+    # слева тонкая, справа толстая: толстая начинается там же, где кончается середина тонкой
+    "╼": """
+        .......
+        .......
+        .......
+        ..#####
+        #######
+        ..#####
+        .......
+        .......
+        .......
+    """,
+    # двойная линия: две тонкие по сторонам оси, между ними просвет
+    "║": """
+        .#...#.
+        .#...#.
+        .#...#.
+        .#...#.
+        .#...#.
+        .#...#.
+        .#...#.
+        .#...#.
+        .#...#.
+    """,
+    # двойной угол - две вложенные буквы Г: внешняя и внутренняя
+    "╔": """
+        .......
+        .......
+        .######
+        .#.....
+        .#.....
+        .#.....
+        .#...##
+        .#...#.
+        .#...#.
+    """,
+    "╬": """
+        .#...#.
+        .#...#.
+        ##...##
+        .......
+        .......
+        .......
+        ##...##
+        .#...#.
+        .#...#.
+    """,
+}
 
 
-def test_horizontal_line_runs_through_the_whole_cell_width():
-    image = draw("─")
-    assert all(lit(image, x, CY) for x in range(WIDTH))
-    assert not lit(image, CX, 0)
+@pytest.mark.parametrize(("char", "expected"), LINES.items(), ids=[name(char) for char in LINES])
+def test_a_line_character_is_drawn_as_this_picture(char: str, expected: str):
+    assert drawn(char, 7, 9) == art(expected)
 
 
-def test_corner_joins_two_edges_through_the_centre():
-    image = draw("┌")
-    assert lit(image, CX, CY)
-    assert lit(image, WIDTH - 1, CY)
-    assert lit(image, CX, HEIGHT - 1)
-    assert not lit(image, 0, CY)
-    assert not lit(image, CX, 0)
+def test_thicker_lines_grow_around_the_axis_and_keep_the_gap_of_a_double_line():
+    # тонкая линия толщиной в два пикселя; толстая - пять (2 * 2 + 1); у двойной между линиями остается просвет
+    assert drawn("┃", 9, 3, light=2) == art("""
+        ..#####..
+        ..#####..
+        ..#####..
+    """)
+    assert drawn("║", 9, 3, light=2) == art("""
+        ##.....##
+        ##.....##
+        ##.....##
+    """)
 
 
-def test_heavy_line_is_thicker_than_light():
-    light = sum(lit(draw("│", light=2), x, 3) for x in range(WIDTH))
-    heavy = sum(lit(draw("┃", light=2), x, 3) for x in range(WIDTH))
-    assert heavy > light
+# --- скругленные углы: сглаживание не нарисовать буквами, поэтому проверяются стыки и симметрия ---
+
+WIDTH, HEIGHT = 11, 21
+CX, CY = WIDTH // 2, HEIGHT // 2
+FG = (240, 10, 10)
 
 
-def test_double_line_has_two_strokes_with_a_gap_between():
-    image = draw("║", light=1)
-    columns = [x for x in range(WIDTH) if lit(image, x, 3)]
-    assert len(columns) == 2
-    assert columns[1] - columns[0] >= 3
-    assert not lit(image, CX, 3)
+def draw(char: str, *, light: int = 1) -> Image.Image:
+    image = Image.new("RGB", (WIDTH, HEIGHT), BACKGROUND)
+    assert draw_cell(ImageDraw.Draw(image), char, (0, 0, WIDTH, HEIGHT), FG, BACKGROUND, light)
+    return image
 
 
-def test_double_corner_closes_the_outer_edge():
-    image = draw("╔", light=1)
-    left = min(x for x in range(WIDTH) if lit(image, x, HEIGHT - 1))
-    top = min(y for y in range(HEIGHT) if lit(image, WIDTH - 1, y))
-    assert lit(image, left, top)  # внешний угол замкнут
+def lit(image: Image.Image, x: int, y: int) -> bool:
+    return image.getpixel((x, y)) == FG
 
 
-def test_rounded_corner_is_not_square():
-    square = draw("┌")
-    rounded = draw("╭")
+def test_rounded_corner_does_not_cover_the_centre_but_reaches_both_edges():
+    square, rounded = draw("┌"), draw("╭")
     assert lit(square, CX, CY)
-    assert not lit(rounded, CX, CY)
-    assert lit(rounded, CX, HEIGHT - 1)
-    assert any(lit(rounded, WIDTH - 1, y) for y in range(HEIGHT))
+    assert not lit(rounded, CX, CY)  # дуга обходит центр
+    assert lit(rounded, CX, HEIGHT - 1)  # вертикальный конец доходит до нижнего края
+    assert any(lit(rounded, WIDTH - 1, y) for y in range(HEIGHT))  # горизонтальный - до правого
 
 
 @pytest.mark.parametrize("light", [1, 2, 3])
@@ -120,6 +279,7 @@ def test_rounded_corner_is_not_square():
     [("╭", HEIGHT - 1, WIDTH - 1), ("╮", HEIGHT - 1, 0), ("╰", 0, WIDTH - 1), ("╯", 0, 0)],
 )
 def test_rounded_corner_ends_join_the_straight_lines_of_the_neighbours(char, vertical_row, horizontal_column, light):
+    # край клетки, в который уходит линия угла, совпадает с краем клетки прямой линии: рамка из клеток без швов
     corner = draw(char, light=light)
     vertical = draw("│", light=light)
     horizontal = draw("─", light=light)
@@ -133,68 +293,269 @@ def test_rounded_corner_ends_join_the_straight_lines_of_the_neighbours(char, ver
 
 def test_rounded_corner_is_antialiased_and_symmetric_to_its_mirror():
     corner = draw("╭")
-    assert len({corner.getpixel((x, y)) for x in range(WIDTH) for y in range(HEIGHT)}) > 3
+    assert len({corner.getpixel((x, y)) for x in range(WIDTH) for y in range(HEIGHT)}) > 3  # есть промежуточные цвета
     mirrored = draw("╮").transpose(Image.Transpose.FLIP_LEFT_RIGHT)
     assert corner.tobytes() == mirrored.tobytes()
 
 
-def test_full_block_and_halves_fill_the_expected_part():
-    full = draw("█")
-    assert all(lit(full, x, y) for x in range(WIDTH) for y in range(HEIGHT))
-    upper = draw("▀")
-    assert lit(upper, 0, 0)
-    assert not lit(upper, 0, HEIGHT - 1)
-    lower = draw("▄")
-    assert lit(lower, 0, HEIGHT - 1)
-    assert not lit(lower, 0, 0)
-    left = draw("▌")
-    assert lit(left, 0, CY)
-    assert not lit(left, WIDTH - 1, CY)
-    right = draw("▐")
-    assert lit(right, WIDTH - 1, CY)
-    assert not lit(right, 0, CY)
+# --- блоки: клетка 8 x 8 ---
+
+BLOCKS = {
+    "▀": """
+        ########
+        ########
+        ########
+        ########
+        ........
+        ........
+        ........
+        ........
+    """,
+    "▄": """
+        ........
+        ........
+        ........
+        ........
+        ########
+        ########
+        ########
+        ########
+    """,
+    "▌": """
+        ####....
+        ####....
+        ####....
+        ####....
+        ####....
+        ####....
+        ####....
+        ####....
+    """,
+    "▐": """
+        ....####
+        ....####
+        ....####
+        ....####
+        ....####
+        ....####
+        ....####
+        ....####
+    """,
+    "█": """
+        ########
+        ########
+        ########
+        ########
+        ########
+        ########
+        ########
+        ########
+    """,
+    "▘": """
+        ####....
+        ####....
+        ####....
+        ####....
+        ........
+        ........
+        ........
+        ........
+    """,
+    "▗": """
+        ........
+        ........
+        ........
+        ........
+        ....####
+        ....####
+        ....####
+        ....####
+    """,
+    "▚": """
+        ####....
+        ####....
+        ####....
+        ####....
+        ....####
+        ....####
+        ....####
+        ....####
+    """,
+    "▛": """
+        ########
+        ########
+        ########
+        ########
+        ####....
+        ####....
+        ####....
+        ####....
+    """,
+    # доли в одну восьмую: нижние растут снизу вверх, левые - слева направо
+    "▁": """
+        ........
+        ........
+        ........
+        ........
+        ........
+        ........
+        ........
+        ########
+    """,
+    "▃": """
+        ........
+        ........
+        ........
+        ........
+        ........
+        ########
+        ########
+        ########
+    """,
+    "▇": """
+        ........
+        ########
+        ########
+        ########
+        ########
+        ########
+        ########
+        ########
+    """,
+    "▏": """
+        #.......
+        #.......
+        #.......
+        #.......
+        #.......
+        #.......
+        #.......
+        #.......
+    """,
+    "▍": """
+        ###.....
+        ###.....
+        ###.....
+        ###.....
+        ###.....
+        ###.....
+        ###.....
+        ###.....
+    """,
+}
 
 
-def test_eighth_blocks_grow_from_the_bottom():
-    heights = [sum(lit(draw(chr(code)), 0, y) for y in range(HEIGHT)) for code in range(0x2581, 0x2589)]
-    assert heights == sorted(heights)
-    assert heights[-1] == HEIGHT
+@pytest.mark.parametrize(("char", "expected"), BLOCKS.items(), ids=[name(char) for char in BLOCKS])
+def test_a_block_character_is_drawn_as_this_picture(char: str, expected: str):
+    assert drawn(char, 8, 8) == art(expected)
 
 
-def test_quadrants():
-    upper_left = draw("▘")
-    assert lit(upper_left, 0, 0)
-    assert not lit(upper_left, WIDTH - 1, 0)
-    assert not lit(upper_left, 0, HEIGHT - 1)
-    lower_right = draw("▗")
-    assert lit(lower_right, WIDTH - 1, HEIGHT - 1)
-    assert not lit(lower_right, 0, 0)
-    assert all(lit(draw("▛"), x, 0) for x in range(WIDTH))
+@pytest.mark.parametrize(("char", "grey"), [("░", 50), ("▒", 100), ("▓", 150)], ids=["light", "medium", "dark"])
+def test_a_shade_is_the_text_colour_mixed_into_the_background_by_a_quarter_a_half_or_three_quarters(char, grey):
+    # фон черный, текст серый 200: четверть от 200 - 50, половина - 100, три четверти - 150
+    shaded = drawn(char, 4, 2).replace(".", "-")  # весь рисунок одного неизвестного цвета, значит одни плюсы
+    assert set(shaded) == {"+", "\n"}
+    image = Image.new("RGB", (4, 2), BACKGROUND)
+    assert draw_cell(ImageDraw.Draw(image), char, (0, 0, 4, 2), INK, BACKGROUND, 1)
+    assert image.getcolors() == [(8, (grey, grey, grey))]
 
 
-def test_shades_blend_the_foreground_with_the_background():
-    for char, share in (("░", 0.25), ("▒", 0.5), ("▓", 0.75)):
-        pixel = draw(char).getpixel((0, 0))
-        assert pixel == tuple(round(c * share) for c in FG)
+# --- точки Брайля: клетка 8 x 8, каждая точка 2 x 2, две колонки по четыре точки ---
+
+BRAILLE = {
+    "⠀": """
+        ........
+        ........
+        ........
+        ........
+        ........
+        ........
+        ........
+        ........
+    """,
+    "⠁": """
+        .##.....
+        .##.....
+        ........
+        ........
+        ........
+        ........
+        ........
+        ........
+    """,
+    "⠈": """
+        .....##.
+        .....##.
+        ........
+        ........
+        ........
+        ........
+        ........
+        ........
+    """,
+    "⠠": """
+        ........
+        ........
+        ........
+        ........
+        .....##.
+        .....##.
+        ........
+        ........
+    """,
+    "⡀": """
+        ........
+        ........
+        ........
+        ........
+        ........
+        ........
+        .##.....
+        .##.....
+    """,
+    "⠃": """
+        .##.....
+        .##.....
+        .##.....
+        .##.....
+        ........
+        ........
+        ........
+        ........
+    """,
+    "⠿": """
+        .##..##.
+        .##..##.
+        .##..##.
+        .##..##.
+        .##..##.
+        .##..##.
+        ........
+        ........
+    """,
+    "⣿": """
+        .##..##.
+        .##..##.
+        .##..##.
+        .##..##.
+        .##..##.
+        .##..##.
+        .##..##.
+        .##..##.
+    """,
+}
 
 
-def test_braille_draws_the_requested_dots_only():
-    assert draw("⠀").getcolors() == [(WIDTH * HEIGHT, BG)]
-    one = draw("⠁")
-    assert any(lit(one, x, y) for x in range(WIDTH // 2) for y in range(HEIGHT // 4))
-    assert not any(lit(one, x, y) for x in range(WIDTH // 2 + 1, WIDTH) for y in range(HEIGHT))
-    full = draw("⣿")
-    assert sum(lit(full, x, y) for x in range(WIDTH) for y in range(HEIGHT)) > sum(
-        lit(one, x, y) for x in range(WIDTH) for y in range(HEIGHT)
-    )
+@pytest.mark.parametrize(("char", "expected"), BRAILLE.items(), ids=[name(char) for char in BRAILLE])
+def test_a_braille_character_draws_only_its_dots(char: str, expected: str):
+    assert drawn(char, 8, 8) == art(expected)
 
 
 def test_other_characters_are_left_to_the_font():
-    image = Image.new("RGB", (WIDTH, HEIGHT), BG)
-    assert not draw_cell(ImageDraw.Draw(image), "A", (0, 0, WIDTH, HEIGHT), FG, BG, 1)
-    assert not draw_cell(ImageDraw.Draw(image), "╱", (0, 0, WIDTH, HEIGHT), FG, BG, 1)
-    assert not draw_cell(ImageDraw.Draw(image), "ab", (0, 0, WIDTH, HEIGHT), FG, BG, 1)
-    assert image.getcolors() == [(WIDTH * HEIGHT, BG)]
+    image = Image.new("RGB", (WIDTH, HEIGHT), BACKGROUND)
+    for char in ("A", "╱", "ab"):
+        assert not draw_cell(ImageDraw.Draw(image), char, (0, 0, WIDTH, HEIGHT), FG, BACKGROUND, 1)
+    assert image.getcolors() == [(WIDTH * HEIGHT, BACKGROUND)]  # ничего не нарисовано
 
 
 # --- толщина линии не зависит от размера клетки и от того, куда она попала ---
@@ -205,19 +566,22 @@ def strokes(char: str, width: int, height: int, light: int, shift: float) -> tup
     Сколько пикселей занимает линия поперек (по горизонтали для вертикальной, по вертикали для горизонтальной),
     если рисовать клетку со сдвигом ``shift`` от целых координат.
     """
-    image = Image.new("RGB", (width + 4, height + 4), BG)
+    image = Image.new("RGB", (width + 4, height + 4), BACKGROUND)
     box = (1 + shift, 1 + shift, 1 + shift + width, 1 + shift + height)
-    assert draw_cell(ImageDraw.Draw(image), char, box, FG, BG, light)
+    assert draw_cell(ImageDraw.Draw(image), char, box, FG, BACKGROUND, light)
     across = sum(lit(image, x, 3) for x in range(image.width))  # поперек вертикальной линии (строка у верхнего края)
     along = sum(lit(image, 3, y) for y in range(image.height))  # поперек горизонтальной линии (столбец у левого края)
     return across, along
 
 
-@pytest.mark.parametrize("shift", [0.0, 0.25, 0.5, 0.75])
-@pytest.mark.parametrize("light", [1, 2, 3])
-@pytest.mark.parametrize("size", [(8, 16), (9, 17), (10, 18), (11, 19), (12, 20), (13, 21), (14, 22), (15, 23)])
-def test_a_line_is_never_thinner_or_thicker_than_asked_in_any_cell(size: tuple[int, int], light: int, shift: float):
-    width, height = size
+@pytest.mark.parametrize("shift", [0.0, 0.5], ids=["on-pixel-edge", "half-pixel-off"])
+@pytest.mark.parametrize("light", [1, 3])
+@pytest.mark.parametrize(
+    ("width", "height"), [(8, 16), (9, 16), (8, 17), (9, 17)], ids=["8x16", "9x16", "8x17", "9x17"]
+)
+def test_a_line_is_exactly_as_thick_as_asked_whatever_the_cell_size_and_position(width, height, light, shift):
+    # Центр клетки попадает то на границу пикселей (чётный размер), то на середину пикселя (нечётный); с банковским
+    # округлением краёв линия при этом то исчезала, то удваивалась.
     vertical_across, _ = strokes("│", width, height, light, shift)
     _, horizontal_along = strokes("─", width, height, light, shift)
     assert vertical_across == light

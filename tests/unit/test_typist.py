@@ -93,7 +93,7 @@ def test_keys_go_as_they_are_without_enter_and_need_no_reply():
 def test_partial_line_does_not_wait_for_a_clean_prompt():
     t = typist(Keys("pri"), "x", prompt=PROMPT)
     assert t.next(1.0, 0.1, lambda: ">> ") == "pri"
-    assert t.next(2.0, 0.0, lambda: ">> pri") == "x\r"  # введена часть строки: приглашение уже не «чистое»
+    assert t.next(2.0, 0.0, lambda: ">> pri") == "x\r"  # введена часть строки: приглашение уже не "чистое"
 
 
 def test_prompt_and_reply_are_awaited_again_after_a_line_even_before_keys():

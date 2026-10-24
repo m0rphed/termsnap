@@ -131,7 +131,7 @@ def test_project_programs_run_in_a_pty_and_leave_no_escape_sequences(item: Progr
     capture = captured(item.name)
     assert (capture.returncode != 0) is item.expect_failure, item.name
     assert capture.lines, item.name
-    assert "" not in capture.text, item.name
+    assert "\x1b" not in capture.text, item.name
 
 
 @pytest.mark.parametrize(

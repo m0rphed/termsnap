@@ -43,3 +43,19 @@ def captures() -> Callable[[str], Capture]:
         return cache[name]
 
     return get
+
+
+@pytest.fixture(scope="session")
+def bundled_fonts(tmp_path_factory: pytest.TempPathFactory):
+    """
+    Подставной шрифт для проверок рисования: тот, что Pillow носит в себе (одинаков на любой машине), записанный в файл.
+    Латиница, цифры и знаки препинания; кириллицы и эмодзи в нем нет, поэтому тексты в таких тестах - ASCII.
+    """
+    pytest.importorskip("PIL")
+    from PIL import ImageFont
+
+    from termsnap.png.fonts import Face, FontSet
+
+    path = tmp_path_factory.mktemp("bundled-font") / "bundled.ttf"
+    path.write_bytes(ImageFont.load_default(10).font_bytes)
+    return FontSet("Bundled", Face("Bundled", "Regular", path))

@@ -1,3 +1,9 @@
+"""
+Картинка целиком: размеры, масштаб, поля, тема и байты PNG. Как рисуются сами фрагменты - в ``test_painter.py``.
+
+Шрифт - встроенный в Pillow (``bundled_fonts``), поэтому результат не зависит от шрифтов машины.
+"""
+
 import io
 
 import pytest
@@ -6,203 +12,66 @@ pytest.importorskip("PIL")
 
 from PIL import Image
 
-from termsnap import DARK, LIGHT, Line, Rgb, Span, Style
-from termsnap.errors import FontNotFound
-from termsnap.png import FontSet, render_image, render_png, resolve
+from termsnap import DARK, LIGHT, Line, Span
+from termsnap.png import FontSet, render_image, render_png
 
 
-@pytest.fixture(scope="module")
-def fonts() -> FontSet:
-    try:
-        return resolve(covers="АЯабвёЖ")
-    except FontNotFound as error:
-        pytest.skip(f"в системе нет подходящего моноширинного шрифта: {error.problems}")
+def lines(*texts: str) -> list[Line]:
+    return [Line((Span(text),)) for text in texts]
 
 
-def rgb(color: Rgb) -> tuple[int, int, int]:
-    return color.red, color.green, color.blue
+def test_the_picture_is_as_wide_as_the_longest_line_and_each_line_adds_a_row(bundled_fonts: FontSet):
+    options = {"fonts": bundled_fonts, "scale": 1, "padding": 0}
+    short, long = render_image(lines("ab"), **options), render_image(lines("abcdef"), **options)
+    assert long.width > short.width
+    assert render_image(lines("abcdef", "ab"), **options).width == long.width  # короткая вторая строка ширину не меняет
+    assert long.height == short.height
+    assert render_image(lines("ab", "ab"), **options).height == 2 * short.height
 
 
-def pixels(image: Image.Image) -> set[tuple[int, int, int]]:
-    colors = image.convert("RGB").getcolors(maxcolors=image.width * image.height) or []
-    return {color for _count, color in colors}
+def test_columns_widen_the_picture_beyond_the_text_but_not_its_height(bundled_fonts: FontSet):
+    options = {"fonts": bundled_fonts, "scale": 1, "padding": 0}
+    narrow = render_image(lines("abcdef"), **options)
+    wide = render_image(lines("abcdef"), columns=12, **options)
+    assert wide.width > narrow.width
+    assert wide.height == narrow.height
 
 
-def test_background_and_size_follow_the_text(fonts: FontSet):
-    lines = [Line((Span("abcdef"),)), Line((Span("ab"),)), Line()]
-    one = render_image(lines, fonts=fonts, scale=1, padding=0)
-    assert one.getpixel((0, 0)) == rgb(DARK.background)
-    wide = render_image(lines, fonts=fonts, scale=1, padding=0, columns=12)
-    assert wide.width > one.width
-    assert wide.height == one.height
-    taller = render_image([*lines, Line()], fonts=fonts, scale=1, padding=0)
-    assert taller.height > one.height
-    padded = render_image(lines, fonts=fonts, scale=1, padding=10)
-    assert (padded.width, padded.height) == (one.width + 20, one.height + 20)
+def test_padding_is_added_on_every_side(bundled_fonts: FontSet):
+    options = {"fonts": bundled_fonts, "scale": 1}
+    bare = render_image(lines("abcdef", "ab"), padding=0, **options)
+    padded = render_image(lines("abcdef", "ab"), padding=10, **options)
+    assert (padded.width, padded.height) == (bare.width + 2 * 10, bare.height + 2 * 10)
 
 
-def test_scale_doubles_the_picture(fonts: FontSet):
-    lines = [Line((Span("hello"),))]
-    small = render_image(lines, fonts=fonts, scale=1, padding=8)
-    big = render_image(lines, fonts=fonts, scale=2, padding=8)
-    assert 1.9 < big.width / small.width < 2.1
-    assert 1.9 < big.height / small.height < 2.1
+def test_scale_two_is_the_same_picture_as_doubled_font_size_and_padding_at_scale_one(bundled_fonts: FontSet):
+    # scale означает только "подробнее в N раз": шрифт и поля становятся вдвое крупнее, а больше ничего не меняется
+    text = lines("hello", "world")
+    detailed = render_image(text, fonts=bundled_fonts, font_size=14, padding=8, scale=2)
+    doubled = render_image(text, fonts=bundled_fonts, font_size=28, padding=16, scale=1)
+    assert detailed.tobytes() == doubled.tobytes()
 
 
-def test_empty_output_still_gives_a_valid_picture(fonts: FontSet):
-    image = render_image([], fonts=fonts)
+def test_empty_output_still_gives_a_valid_picture(bundled_fonts: FontSet):
+    image = render_image([], fonts=bundled_fonts)
     assert image.width > 0
     assert image.height > 0
 
 
-def test_theme_decides_the_background(fonts: FontSet):
-    image = render_image([Line((Span("x"),))], fonts=fonts, theme=LIGHT)
-    assert image.getpixel((0, 0)) == (255, 255, 255)
+@pytest.mark.parametrize(
+    ("theme", "background"), [(DARK, DARK.background), (LIGHT, LIGHT.background)], ids=["dark", "light"]
+)
+def test_the_picture_is_filled_with_the_background_of_the_theme(theme, background, bundled_fonts: FontSet):
+    image = render_image(lines(" "), fonts=bundled_fonts, theme=theme, scale=1)
+    assert image.getcolors() == [(image.width * image.height, background.channels)]
 
 
-def test_span_background_fills_its_cells(fonts: FontSet):
-    colour = Rgb(10, 20, 30)
-    lines = [Line((Span("   ", Style(bg=colour)),))]
-    image = render_image(
-        lines,
-        fonts=fonts,
-        scale=1,
-        padding=0,
-        theme=LIGHT,
-    )
-    assert image.getpixel((1, 1)) == (10, 20, 30)
-    assert image.getpixel((image.width - 1, image.height - 1)) == (10, 20, 30)
-
-
-def test_text_is_drawn_in_the_style_colour(fonts: FontSet):
-    colour = Rgb(250, 10, 10)
-    lines = [Line((Span("MMMM", Style(fg=colour)),))]
-    image = render_image(
-        lines,
-        fonts=fonts,
-        scale=1,
-        font_size=28,
-        theme=LIGHT,
-    )
-    assert (250, 10, 10) in pixels(image)
-
-
-def test_inverse_swaps_text_and_background_colours(fonts: FontSet):
-    lines = [Line((Span("   ", Style(inverse=True)),))]
-    image = render_image(
-        lines,
-        fonts=fonts,
-        scale=1,
-        padding=0,
-        theme=DARK,
-    )
-    assert image.getpixel((1, 1)) == rgb(DARK.foreground)
-
-
-def test_underline_and_strike_are_horizontal_lines_over_the_whole_span(fonts: FontSet):
-    colour = Rgb(1, 200, 3)
-    plain = render_image(
-        [Line((Span("MMMM", Style(fg=colour)),))],
-        fonts=fonts,
-        scale=1,
-        font_size=28,
-        theme=LIGHT,
-    )
-    underlined = render_image(
-        [Line((Span("MMMM", Style(fg=colour, underline=True)),))],
-        fonts=fonts,
-        scale=1,
-        font_size=28,
-        theme=LIGHT,
-    )
-    struck = render_image(
-        [Line((Span("MMMM", Style(fg=colour, strike=True)),))],
-        fonts=fonts,
-        scale=1,
-        font_size=28,
-        theme=LIGHT,
-    )
-
-    def long_rows(image: Image.Image) -> int:
-        width = image.width
-        rows = 0
-        for y in range(image.height):
-            count = sum(1 for x in range(width) if image.getpixel((x, y)) == (1, 200, 3))
-            rows += count >= width * 0.5
-        return rows
-
-    assert long_rows(plain) == 0
-    assert long_rows(underlined) >= 1
-    assert long_rows(struck) >= 1
-
-
-def test_dim_text_is_closer_to_the_background(fonts: FontSet):
-    bright = render_image(
-        [Line((Span("MMMM", Style(fg=Rgb(255, 255, 255))),))],
-        fonts=fonts,
-        scale=1,
-        font_size=28,
-    )
-    dim = render_image(
-        [Line((Span("MMMM", Style(fg=Rgb(255, 255, 255), dim=True)),))],
-        fonts=fonts,
-        scale=1,
-        font_size=28,
-    )
-    assert max(sum(p) for p in pixels(bright)) > max(sum(p) for p in pixels(dim))
-
-
-def test_bold_text_is_heavier_even_without_a_bold_face(fonts: FontSet):
-    only_regular = FontSet(fonts.family, fonts.regular)
-    light = render_image(
-        [Line((Span("MMMM"),))],
-        fonts=only_regular,
-        scale=2,
-        font_size=20,
-    )
-    heavy = render_image(
-        [Line((Span("MMMM", Style(bold=True)),))],
-        fonts=only_regular,
-        scale=2,
-        font_size=20,
-    )
-
-    def ink(image: Image.Image) -> int:
-        background = image.getpixel((0, 0))
-        colors = image.convert("RGB").getcolors(maxcolors=image.width * image.height) or []
-        return sum(count for count, color in colors if color != background)
-
-    assert ink(heavy) > ink(light)
-
-
-def test_png_bytes_are_a_png_with_screen_resolution(fonts: FontSet):
-    lines = [Line((Span("Привет, мир", Style(fg=Rgb(1, 2, 3))),))]
-    data = render_png(lines, fonts=fonts, scale=2)
+def test_png_bytes_are_a_png_with_screen_resolution(bundled_fonts: FontSet):
+    text = lines("hello")
+    data = render_png(text, fonts=bundled_fonts, scale=2)
     assert data.startswith(b"\x89PNG\r\n\x1a\n")
     image = Image.open(io.BytesIO(data))
-    assert image.size == render_image(lines, fonts=fonts, scale=2).size
+    assert image.size == render_image(text, fonts=bundled_fonts, scale=2).size
     dpi = image.info["dpi"]
-    assert round(dpi[0]) == 192
+    assert round(dpi[0]) == 192  # 96 точек на дюйм "как на экране", умноженные на масштаб
     assert round(dpi[1]) == 192
-
-
-@pytest.mark.parametrize("scale", [1, 2])
-@pytest.mark.parametrize("font_size", range(9, 31))
-def test_horizontal_box_lines_are_drawn_at_every_font_size(fonts: FontSet, font_size: int, scale: int):
-    # раньше при некоторых размерах горизонтальные линии пропадали (банковское округление края штриха)
-    lines = [Line((Span("┌──┬──┐"),)), Line((Span("│  │  │"),)), Line((Span("└──┴──┘"),))]
-    image = render_image(
-        lines,
-        fonts=fonts,
-        font_size=font_size,
-        scale=scale,
-        padding=0,
-    )
-    background = image.getpixel((0, image.height // 2 + 1))
-    rows = image.height // 3
-    for band in (0, 2):
-        lit_per_row = [
-            sum(image.getpixel((x, y)) != background for x in range(image.width))
-            for y in range(band * rows, (band + 1) * rows)
-        ]
-        assert max(lit_per_row) >= image.width * 0.8, (font_size, scale, band)
