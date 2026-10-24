@@ -145,5 +145,5 @@ INTERACTIVE = [
         snapshot=Snapshot(after=0.5),
     ),
     Program("htop", ("htop",), tool="htop", snapshot=Snapshot(when=r"Tasks:", after=2)),
-    Program("top", ("top",), tool="top", posix_only=True, snapshot=Snapshot(when=r"PID\s+USER", after=1)),
+    Program("top", ("top",), tool="top", posix_only=True, snapshot=Snapshot(when=r"PID\s+(USER|COMMAND)", after=1)),
 ]

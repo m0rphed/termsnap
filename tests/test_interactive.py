@@ -226,8 +226,8 @@ def test_stopped_capture_renders_to_png():
 def test_real_top_shows_its_header_and_the_process_table():
     capture = session("top")
     assert capture.stopped
-    assert capture.lines[0].text.startswith("top - ")
-    assert any(re.match(r"\s*PID\s+USER", text) for text in texts(capture))
+    assert capture.lines[0].text.startswith(("top - ", "Processes:"))  # procps в Linux, BSD-top в macOS
+    assert any(re.match(r"\s*PID\s+(USER|COMMAND)", text) for text in texts(capture))
     assert "\x1b" not in capture.text
 
 
