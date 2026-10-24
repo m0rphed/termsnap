@@ -1,14 +1,14 @@
 import time
 
 from _console import make
-from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TimeElapsedColumn
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, TaskProgressColumn, TextColumn
 
 console = make()
 with Progress(
     TextColumn("[bold blue]{task.description}"),
     BarColumn(),
     TaskProgressColumn(),
-    TimeElapsedColumn(),
+    MofNCompleteColumn(),  # вместо прошедшего времени: вывод программы не должен зависеть от часов
     console=console,
 ) as progress:
     first = progress.add_task("Скачивание", total=40)
