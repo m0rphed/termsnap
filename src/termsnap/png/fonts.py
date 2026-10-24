@@ -424,6 +424,33 @@ def resolve_best(families: Sequence[str] = DEFAULT_FAMILIES, *, covers: str = ""
     return best[1]
 
 
+#: Как можно задать основной шрифт: готовый ``FontSet`` (``find_family``, ``from_files``), имя семейства или список
+#: семейств в порядке предпочтения.
+type FontSpec = FontSet | str | Sequence[str]
+
+
+def resolve_spec(spec: FontSpec | None, *, covers: str = "") -> FontSet:
+    """
+    Основной шрифт по любому способу его задать (``FontSpec``); ``None`` - ``DEFAULT_FAMILIES``.
+
+    Из списка берется первое установленное семейство, в котором есть все символы ``covers``; если такого нет (в
+    тексте эмодзи или редкие знаки, которых нет ни в одном основном шрифте) - установленное семейство из списка с
+    наибольшим числом нужных символов, а недостающие рисуются запасными шрифтами (``FALLBACK_FAMILIES``). Если не
+    установлено ни одно семейство из списка - ``FontNotFound`` с причиной по каждому: подставлять шрифт по умолчанию
+    вместо явно названного нельзя, документ вышел бы не таким, как просили. Нужен запасной вариант - допишите
+    ``*DEFAULT_FAMILIES`` в конец списка.
+    """
+    if isinstance(spec, FontSet):
+        return spec
+    families = DEFAULT_FAMILIES if spec is None else (spec,) if isinstance(spec, str) else tuple(spec)
+    if not families:
+        raise ValueError("список семейств шрифта пуст")
+    try:
+        return resolve(families, covers=covers)
+    except FontNotFound:
+        return resolve_best(families, covers=covers)
+
+
 @cache
 def fallback_fontsets() -> tuple[FontSet, ...]:
     """

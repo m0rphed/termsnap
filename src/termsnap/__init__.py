@@ -15,15 +15,29 @@ from termsnap.errors import RunTimeout, TermsnapError
 from termsnap.model import PLAIN, Color, Indexed, Line, Rgb, Span, Style
 from termsnap.runner import Capture, run, terminal_environment
 from termsnap.steps import Key, Keys, Pause, Snapshot, Step
-from termsnap.theme import DARK, LIGHT, Theme
+from termsnap.theme import (
+    ANSI_NAMES,
+    DARK,
+    LIGHT,
+    THEMES,
+    ColorLike,
+    Theme,
+    ThemeSpec,
+    get_theme,
+    parse_color,
+    register_theme,
+)
 
 __all__ = [
+    "ANSI_NAMES",
     "DARK",
     "LIGHT",
     "PLAIN",
+    "THEMES",
     "Backend",
     "Capture",
     "Color",
+    "ColorLike",
     "Indexed",
     "Key",
     "Keys",
@@ -41,8 +55,12 @@ __all__ = [
     "Style",
     "TermsnapError",
     "Theme",
+    "ThemeSpec",
     "apply_sgr",
+    "get_theme",
     "parse",
+    "parse_color",
+    "register_theme",
     "run",
     "terminal_environment",
 ]

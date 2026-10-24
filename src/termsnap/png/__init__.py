@@ -15,10 +15,12 @@ from termsnap.png.fonts import (
     FALLBACK_FAMILIES,
     Face,
     FontSet,
+    FontSpec,
     find_family,
     from_files,
     resolve,
     resolve_best,
+    resolve_spec,
 )
 from termsnap.png.render import RenderOptions, render_image, render_png
 
@@ -27,6 +29,7 @@ __all__ = [
     "FALLBACK_FAMILIES",
     "Face",
     "FontSet",
+    "FontSpec",
     "RenderOptions",
     "find_family",
     "from_files",
@@ -34,4 +37,5 @@ __all__ = [
     "render_png",
     "resolve",
     "resolve_best",
+    "resolve_spec",
 ]

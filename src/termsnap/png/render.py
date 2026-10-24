@@ -14,11 +14,10 @@ from typing import TypedDict, Unpack
 
 from PIL import Image, ImageDraw, ImageFont, features
 
-from termsnap.errors import FontNotFound
 from termsnap.model import Line, Rgb
 from termsnap.png.boxes import draw_cell
-from termsnap.png.fonts import Face, FontSet, fallback_fontsets, has_glyph, resolve, resolve_best
-from termsnap.theme import DARK, Theme
+from termsnap.png.fonts import Face, FontSet, FontSpec, fallback_fontsets, has_glyph, resolve_spec
+from termsnap.theme import DARK, ThemeSpec, get_theme
 from termsnap.width import cluster_width, clusters
 
 #: Доля цвета текста в тусклом (``dim``) тексте; остальное - цвет фона.
@@ -59,17 +58,6 @@ def _rgb(color: Rgb) -> tuple[int, int, int]:
     return color.red, color.green, color.blue
 
 
-def _main_fonts(text: str) -> FontSet:
-    """
-    Основной шрифт для текста: первое семейство по умолчанию, в котором есть все символы; если такого нет (в тексте
-    эмодзи или редкие знаки) - семейство, в котором их больше всего.
-    """
-    try:
-        return resolve(covers=text)
-    except FontNotFound:
-        return resolve_best(covers=text)
-
-
 def _drawn_text(cluster: str) -> str:
     """
     Что рисовать для группы символов: без селекторов начертания и без продолжения составного эмодзи (без
@@ -96,8 +84,8 @@ def _choose(fonts: FontSet, size: int, char: str, *, bold: bool, italic: bool) -
 def render_image(
     lines: Sequence[Line],
     *,
-    theme: Theme = DARK,
-    fonts: FontSet | None = None,
+    theme: ThemeSpec = DARK,
+    fonts: FontSpec | None = None,
     font_size: float = 14,
     scale: int = 2,
     padding: int = 16,
@@ -105,12 +93,20 @@ def render_image(
     columns: int | None = None,
 ) -> Image.Image:
     """
-    Рисует строки на фоне темы. ``font_size`` и ``padding`` задаются в пикселях «как на экране», ``scale`` - во
-    сколько раз картинка подробнее (при 2 текст четкий на дисплеях высокой плотности). ``columns`` - ширина
-    картинки в клетках (по умолчанию по самой длинной строке). Если ``fonts`` не заданы, основной шрифт выбирается
-    автоматически из установленных (см. ``termsnap.png.fonts.resolve``), недостающие символы рисуются запасными.
+    Рисует строки на фоне темы. ``theme`` - ``Theme``, имя темы (``"light"``) или словарь для ``Theme.from_mapping``
+    (см. ``termsnap.get_theme``). ``font_size`` и ``padding`` задаются в пикселях «как на экране», ``scale`` - во
+    сколько раз картинка подробнее (при 2 текст четкий на дисплеях высокой плотности). ``padding`` - поля со всех
+    четырех сторон, можно ``0``. ``columns`` - ширина картинки в клетках (по умолчанию по самой длинной строке).
+
+    ``fonts`` - основной шрифт: готовый ``FontSet``, имя семейства или список семейств в порядке предпочтения (см.
+    ``termsnap.png.fonts.resolve_spec``); не задан - выбирается из установленных по умолчанию. Основной шрифт
+    переопределяется, а символы, которых в нем нет (эмодзи, стрелки, иероглифы), по-прежнему рисуются запасными
+    шрифтами автоматически, рамки и блоки рисует сама библиотека.
     """
-    fonts = fonts or _main_fonts("".join(line.text for line in lines))
+    if padding < 0:
+        raise ValueError(f"поля не могут быть отрицательными: {padding}")
+    theme = get_theme(theme)
+    fonts = resolve_spec(fonts, covers="".join(line.text for line in lines))
     size = round(font_size * scale)
     regular = _font(fonts.regular, size)
     ascent, descent = regular.getmetrics()
@@ -173,8 +169,8 @@ class RenderOptions(TypedDict, total=False):
     Параметры ``render_image`` и ``render_png`` (все необязательны), см. ``render_image``.
     """
 
-    theme: Theme
-    fonts: FontSet
+    theme: ThemeSpec
+    fonts: FontSpec
     font_size: float
     scale: int
     padding: int
