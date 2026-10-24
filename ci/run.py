@@ -9,6 +9,7 @@ GitHub Actions, Docker, ``act`` и вы сами запускают одно и 
     python ci/run.py lint                 # ruff format --check и ruff check
     python ci/run.py types                # basedpyright
     python ci/run.py test -- -k pty -x    # pytest (все, что после --, уходит в pytest)
+    python ci/run.py test --level unit    # только один уровень: unit, integration или external (см. tests/conftest.py)
     python ci/run.py --python 3.13 all    # другая версия Python, свое окружение .venv-ci-3.13
     python ci/run.py system-deps          # системные пакеты для Linux (шрифты, htop), для CI и Docker
     python ci/run.py docker 3.12 3.13 3.14     # то же в контейнерах: Linux на любой машине, где есть Docker или Podman
@@ -22,7 +23,8 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from functools import partial
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,6 +36,9 @@ PYTHONS = ("3.12", "3.13", "3.14")
 APT_PACKAGES = ("fontconfig", "fonts-dejavu-core", "procps", "htop")
 
 IMAGE = "termsnap-ci"
+
+#: Уровни тестов (маркеры pytest, их ставит ``tests/conftest.py`` по каталогу): от быстрых к медленным.
+LEVELS = ("unit", "integration", "external")
 
 
 def run(command: Sequence[str], env: dict[str, str] | None = None) -> int:
@@ -72,8 +77,9 @@ def types(env: dict[str, str]) -> int:
     return run(["uv", "run", "basedpyright"], env)
 
 
-def test(env: dict[str, str], pytest_args: Sequence[str] = ()) -> int:
-    return run(["uv", "run", "pytest", "-ra", *pytest_args], env)
+def test(env: dict[str, str], pytest_args: Sequence[str] = (), level: str | None = None) -> int:
+    marker = ["-m", level] if level else []
+    return run(["uv", "run", "pytest", "-ra", *marker, *pytest_args], env)
 
 
 def system_deps() -> int:
@@ -124,7 +130,9 @@ def check_all(python: str | None) -> int:
     if code != 0:
         return report({"sync": code})
     results: dict[str, int] = {}
-    for name, step in (("lint", lint), ("types", types), ("test", test)):
+    steps: list[tuple[str, Callable[[dict[str, str]], int]]] = [("lint", lint), ("types", types)]
+    steps += [(f"test {level}", partial(test, level=level)) for level in LEVELS]
+    for name, step in steps:
         started = time.monotonic()
         code = step(env)
         results[f"{name} ({time.monotonic() - started:.0f} с)"] = code
@@ -143,6 +151,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     commands.add_parser("lint", help="ruff format --check и ruff check")
     commands.add_parser("types", help="basedpyright")
     pytest_parser = commands.add_parser("test", help="pytest; аргументы после -- уходят в pytest")
+    pytest_parser.add_argument("--level", choices=LEVELS, help="только один уровень тестов (по умолчанию все)")
     pytest_parser.add_argument("pytest_args", nargs=argparse.REMAINDER)
     commands.add_parser("system-deps", help="системные пакеты для Linux")
     docker_parser = commands.add_parser("docker", help="все проверки в контейнерах")
@@ -165,7 +174,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return types(env)
         case "test":
             pytest_args = [item for item in args.pytest_args if item != "--"]
-            return test(env, pytest_args)
+            return test(env, pytest_args, args.level)
         case "system-deps":
             return system_deps()
         case "docker":

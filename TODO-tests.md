@@ -21,11 +21,13 @@
 - external: чужие команды (`top`, `htop`, IPython, `git`, `ruff`, `pytest`) - обязательные, но с зафиксированными
   версиями и без сети; сюда же добавить пару тестов на нажатия клавиш (сейчас они только в сессиях IPython)
 
-- [ ] Объявить маркеры в `pyproject.toml` (`--strict-markers`), расставить по файлам или каталогам
-  (`tests/unit/`, `tests/integration/`, `tests/external/`)
-- [ ] Команды в `ci/run.py`: `test --level unit|integration|external`, по умолчанию все
-- [ ] Время выполнения каждого уровня записать в README (сейчас весь набор: Windows 84 с, Linux 108 с, macOS 122 с)
-- [ ] Живые тесты с часами и допусками (`2 <= tick <= 8`, `duration < 10` в `test_interactive.py`) либо убрать
+- [x] Маркеры в `pyproject.toml` (`--strict-markers`); уровень задает каталог (`tests/unit/`, `tests/integration/`,
+  `tests/external/`), `tests/conftest.py` ставит маркер и считает тест вне каталогов ошибкой сбора
+- [x] Смешанные файлы разрезаны: `test_programs`, `test_pty`, `test_interactive`, `test_architecture`, `test_png`;
+  в реестре программ появился флаг `external`
+- [x] `ci/run.py test --level unit|integration|external` (по умолчанию все), `all` печатает время каждого уровня
+- [x] Уровни и их время записаны в README (Windows: unit 4 с, integration 50 с, external 27 с)
+- [ ] Живые тесты с часами и допусками (`2 <= tick <= 8`, `duration < 10` в `integration/test_interactive.py`) либо убрать
   (логику времени уже проверяет `Typist` с подставными часами), либо перевести в external с понятной причиной
 
 ## 2. Тесты на PNG и цвета: чтобы ожидание можно было увидеть

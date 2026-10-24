@@ -32,6 +32,7 @@ class Program:
     snapshot: Snapshot | None = None  # когда снять экран у программы, которая сама не завершается
     isolated: bool = False  # без VIRTUAL_ENV: uvx-программы не должны думать, что работают в нашем окружении
     posix_only: bool = False  # программа есть только в Linux и macOS
+    external: bool = False  # чужая команда, а не скрипт проекта: тесты на ней лежат в tests/external
 
     @property
     def available(self) -> bool:
@@ -67,22 +68,25 @@ REGISTRY = [
     Program("rich_progress", (PY, _script("rich_progress.py"))),
     Program("rich_live", (PY, _script("rich_live.py"))),
     Program("rich_misc", (PY, _script("rich_misc.py"))),
-    Program("node_inspect", ("node", _script("node_inspect.js")), tool="node"),
-    Program("node_ansi", ("node", _script("node_ansi.js")), tool="node"),
+    Program("node_inspect", ("node", _script("node_inspect.js")), tool="node", external=True),
+    Program("node_ansi", ("node", _script("node_ansi.js")), tool="node", external=True),
     Program(
         "pytest_failure",
         (PY, "-m", "pytest", _script("sample_failing_test.py"), "--color=yes", "-p", "no:cacheprovider", "-q"),
         expect_failure=True,
+        external=True,
     ),
     Program(
         "ruff_diagnostics",
         (PY, "-m", "ruff", "check", _script("bad_style.py"), "--color=always", "--no-cache", "--select", "E,F,I"),
         expect_failure=True,
+        external=True,
     ),
     Program(
         "git_log",
         ("git", "-C", str(HERE.parent), "log", "--oneline", "--graph", "--color=always", "-n", "5"),
         tool="git",
+        external=True,
     ),
 ]
 
@@ -116,6 +120,7 @@ INTERACTIVE = [
         ),
         prompt=r"In \[\d+\]:$",
         isolated=True,
+        external=True,
     ),
     # стрелка вверх достает прошлую строку из истории, Enter ее повторяет
     Program(
@@ -125,6 +130,7 @@ INTERACTIVE = [
         input=("6 * 7", Key.UP, Key.ENTER, Pause(1), "exit"),
         prompt=r"In \[\d+\]:$",
         isolated=True,
+        external=True,
     ),
     # Tab открывает меню автодополнения (первый раз оно появляется не сразу): снимок ждет его появления
     Program(
@@ -135,6 +141,7 @@ INTERACTIVE = [
         prompt=r"In \[\d+\]:$",
         snapshot=Snapshot(when=r"sqrt", after=0.3),
         isolated=True,
+        external=True,
     ),
     # программы, которые сами не завершаются: экран снимается в заданный момент, и программа останавливается
     Program(
@@ -144,6 +151,20 @@ INTERACTIVE = [
         settle=0,
         snapshot=Snapshot(after=0.5),
     ),
-    Program("htop", ("htop",), tool="htop", snapshot=Snapshot(when=r"Tasks:", after=2)),
-    Program("top", ("top",), tool="top", posix_only=True, snapshot=Snapshot(when=r"PID\s+(USER|COMMAND)", after=1)),
+    Program("htop", ("htop",), tool="htop", snapshot=Snapshot(when=r"Tasks:", after=2), external=True),
+    Program(
+        "top",
+        ("top",),
+        tool="top",
+        posix_only=True,
+        snapshot=Snapshot(when=r"PID\s+(USER|COMMAND)", after=1),
+        external=True,
+    ),
 ]
+
+ALL_PROGRAMS = [*REGISTRY, *PTY_REGISTRY, *INTERACTIVE]
+
+#: Скрипты проекта: тесты на них лежат в ``tests/integration``. Чужие команды (``external=True``) проверяются в
+#: ``tests/external``.
+PROJECT_PROGRAMS = [program for program in ALL_PROGRAMS if not program.external]
+EXTERNAL_PROGRAMS = [program for program in ALL_PROGRAMS if program.external]

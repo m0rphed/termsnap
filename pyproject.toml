@@ -62,6 +62,13 @@ pythonVersion = "3.12"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["examples"]
+addopts = ["--strict-markers"]
+# уровни проставляет tests/conftest.py по каталогу теста
+markers = [
+    "unit: функции и механизмы без запуска программ",
+    "integration: настоящие процессы, написанные в проекте",
+    "external: чужие команды (top, htop, IPython, node, pytest, ruff, git)",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["ANN"]   # в тестах аннотации возвращаемого значения не нужны
