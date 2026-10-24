@@ -171,14 +171,16 @@ class Responder:
         return reply.encode()
 
 
-def render(text: str, *, columns: int, rows: int) -> tuple[Line, ...]:
+def render(text: str, *, columns: int, rows: int, visible_only: bool = False) -> tuple[Line, ...]:
     """
-    Строки со стилями, которые остались на экране ``columns`` x ``rows`` после вывода ``text`` (вместе со строками,
-    ушедшими вверх при прокрутке). Пустые строки в конце отбрасываются.
+    Строки со стилями, которые остались на экране ``columns`` x ``rows`` после вывода ``text``. По умолчанию
+    вместе со строками, ушедшими вверх при прокрутке (так не теряется длинный вывод); с ``visible_only`` - только
+    то, что видно на экране сейчас, как на скриншоте окна терминала. Пустые строки в конце отбрасываются.
     """
     screen = _Screen(columns, rows, history=HISTORY_LINES)
     pyte.Stream(screen).feed(text)
-    stored = [[row[column] for column in range(columns)] for row in screen.history.top]
+    scrolled_off = [] if visible_only else screen.history.top
+    stored = [[row[column] for column in range(columns)] for row in scrolled_off]
     visible = [[screen.buffer[y][column] for column in range(columns)] for y in range(rows)]
     lines = [_line(cells) for cells in stored + visible]
     while lines and not lines[-1].spans:

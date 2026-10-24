@@ -37,6 +37,7 @@ class Typist:
         self._settle = request.settle
         self._columns = request.columns
         self._rows = request.rows
+        self._visible_only = request.capture_visible_only
         self._snapshot: Snapshot | None = request.snapshot
         self._when = None if self._snapshot is None or self._snapshot.when is None else re.compile(self._snapshot.when)
         self._activity_at = started  # когда последний раз что-то напечатано или отсижена пауза
@@ -100,7 +101,7 @@ class Typist:
         if self._when is not None:
             if self._matched_at is None and self._checked_output_at != last_output:
                 self._checked_output_at = last_output
-                if self._when.search(_screen_text(output(), self._columns, self._rows)):
+                if self._when.search(_screen_text(output(), self._columns, self._rows, self._visible_only)):
                     self._matched_at = now
             if self._matched_at is None:
                 return False
@@ -119,5 +120,5 @@ class Typist:
         return True
 
 
-def _screen_text(output: str, columns: int, rows: int) -> str:
-    return "\n".join(line.text for line in screen.render(output, columns=columns, rows=rows))
+def _screen_text(output: str, columns: int, rows: int, visible_only: bool) -> str:
+    return "\n".join(line.text for line in screen.render(output, columns=columns, rows=rows, visible_only=visible_only))

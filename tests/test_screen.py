@@ -10,12 +10,12 @@ VS16 = chr(0xFE0F)
 ZWJ = chr(0x200D)
 
 
-def screen(text: str, *, columns: int = 40, rows: int = 10):
-    return render(text, columns=columns, rows=rows)
+def screen(text: str, *, columns: int = 40, rows: int = 10, visible_only: bool = False):
+    return render(text, columns=columns, rows=rows, visible_only=visible_only)
 
 
-def texts(text: str, **size: int) -> list[str]:
-    return [line.text for line in screen(text, **size)]
+def texts(text: str, **options: int | bool) -> list[str]:
+    return [line.text for line in screen(text, **options)]
 
 
 def test_plain_text_lines_without_trailing_blank_cells():
@@ -141,3 +141,26 @@ def test_responder_does_not_repeat_old_answers():
     responder = Responder(80, 24)
     assert responder.feed(f"{ESC}[6n".encode())
     assert responder.feed(b"more") == b""
+
+
+# --- только видимая часть экрана ---
+
+
+def numbered(count: int) -> str:
+    return "".join(f"line {number}\r\n" for number in range(1, count + 1))
+
+
+def test_visible_only_drops_the_lines_that_scrolled_off_the_screen():
+    assert texts(numbered(30), rows=5, visible_only=True) == [f"line {number}" for number in range(27, 31)]
+    assert len(texts(numbered(30), rows=5)) == 30  # по умолчанию ничего не теряется
+
+
+def test_visible_only_changes_nothing_when_everything_fits_on_the_screen():
+    assert texts(numbered(3), rows=10, visible_only=True) == texts(numbered(3), rows=10)
+
+
+def test_visible_only_keeps_styles_and_absolute_positions():
+    text = numbered(20) + f"{ESC}[1;1H{ESC}[2K{ESC}[1;31mtop{ESC}[0m"
+    lines = screen(text, rows=5, visible_only=True)
+    assert lines[0].text == "top"  # перерисовали верх видимого экрана
+    assert lines[0].spans[0].style == Style(fg=Indexed(1), bold=True)

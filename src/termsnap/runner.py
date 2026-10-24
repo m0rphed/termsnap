@@ -82,6 +82,7 @@ def run(
     prompt: str | None = None,
     settle: float = 0.5,
     snapshot: Snapshot | None = None,
+    capture_visible_only: bool = False,
 ) -> Capture:
     """
     Запускает команду (без оболочки: ``["node", "app.js"]``) и возвращает ее вывод со стилями.
@@ -98,6 +99,11 @@ def run(
     Когда программа сама не завершается (``htop``), ``snapshot`` задает момент снимка экрана: после него программа
     останавливается, а в ``Capture.stopped`` стоит ``True``. Иначе программа должна завершиться сама (``exit``),
     а если нет - ``RunTimeout`` с тем, что успело появиться.
+
+    ``capture_visible_only`` (только ``PtyBackend``): по умолчанию в результат входят и строки, ушедшие вверх
+    при прокрутке экрана, чтобы не терять длинный вывод. С ``True`` берется только то, что видно на экране в
+    конце (``rows`` строк), как на скриншоте окна терминала; так же ``Snapshot(when=...)`` ищет текст только
+    среди видимого. Программам, которые рисуют экран целиком, это обычно и нужно.
     """
     command = tuple(argv)
     if not command:
@@ -113,6 +119,7 @@ def run(
         prompt=prompt,
         settle=settle,
         snapshot=snapshot,
+        capture_visible_only=capture_visible_only,
     )
     backend = backend or PipeBackend()
     result = backend.run(request)

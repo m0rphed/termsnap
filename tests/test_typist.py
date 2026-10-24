@@ -204,3 +204,16 @@ def test_ctrl_letters():
 def test_ctrl_wants_one_latin_letter(bad: str):
     with pytest.raises(ValueError, match="латинская"):
         Key.ctrl(bad)
+
+
+def test_snapshot_when_sees_scrolled_off_text_only_without_the_visible_only_flag():
+    output = "MARKER\r\n" + "filler\r\n" * 30  # метка ушла за верхний край экрана из 10 строк
+    for visible_only, found in ((False, True), (True, False)):
+        request = Request(
+            argv=("x",),
+            env={},
+            rows=10,
+            snapshot=Snapshot(when="MARKER"),
+            capture_visible_only=visible_only,
+        )
+        assert Typist(request, started=0.0).snapshot_due(1.0, 1.0, lambda: output) is found

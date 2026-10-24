@@ -165,3 +165,28 @@ def test_pty_programs_render_to_png(name: str):
     except FontNotFound as error:
         pytest.skip(f"нет моноширинного шрифта: {error.problems}")
     assert Image.open(io.BytesIO(data)).width > 100
+
+
+# --- видимая часть экрана и прокрутка ---
+
+SCROLLING = "for n in range(1, 51): print('line', n)"
+
+
+def test_scrolled_off_lines_are_kept_by_default_and_dropped_on_request():
+    everything = run(python(SCROLLING), backend=PTY, rows=10)
+    assert (len(everything.lines), everything.lines[0].text, everything.lines[-1].text) == (50, "line 1", "line 50")
+    visible = run(python(SCROLLING), backend=PTY, rows=10, capture_visible_only=True)
+    assert (len(visible.lines), visible.lines[0].text, visible.lines[-1].text) == (9, "line 42", "line 50")
+    assert visible.output == everything.output  # сырой поток тот же, различается только разбор
+
+
+def test_visible_only_keeps_the_final_screen_of_a_stopped_program():
+    from termsnap import Snapshot
+
+    code = "import time\n" + SCROLLING + "\ntime.sleep(60)"
+    options = {"backend": PTY, "rows": 10, "snapshot": Snapshot(after=1.0), "timeout": 30}
+    everything = run(python(code), **options)
+    visible = run(python(code), capture_visible_only=True, **options)
+    assert everything.stopped and visible.stopped
+    assert len(everything.lines) == 50
+    assert [line.text for line in visible.lines] == [f"line {number}" for number in range(42, 51)]

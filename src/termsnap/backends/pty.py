@@ -42,7 +42,12 @@ class PtyBackend:
     def interpret(self, output: bytes, request: Request, encoding: str) -> tuple[Line, ...]:
         from termsnap import screen
 
-        return screen.render(output.decode(encoding, errors="replace"), columns=request.columns, rows=request.rows)
+        return screen.render(
+            output.decode(encoding, errors="replace"),
+            columns=request.columns,
+            rows=request.rows,
+            visible_only=request.capture_visible_only,
+        )
 
 
 def _with_truecolor(request: Request) -> Request:

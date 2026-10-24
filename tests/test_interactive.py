@@ -121,6 +121,8 @@ def test_pipe_backend_refuses_input_and_snapshot():
         run([sys.executable, "-c", "pass"], backend=PipeBackend(), input=("x",))
     with pytest.raises(ValueError, match="PtyBackend"):
         run([sys.executable, "-c", "pass"], backend=PipeBackend(), snapshot=Snapshot())
+    with pytest.raises(ValueError, match="PtyBackend"):
+        run([sys.executable, "-c", "pass"], backend=PipeBackend(), capture_visible_only=True)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="ConPTY отвечает на запросы терминала сам")
