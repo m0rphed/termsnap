@@ -15,7 +15,7 @@ from typing import TypedDict, Unpack
 from PIL import Image, ImageDraw, ImageFont, features
 
 from termsnap.model import Line, Rgb
-from termsnap.png.boxes import draw_cell
+from termsnap.png.boxes import draw_cell, pixel
 from termsnap.png.fonts import Face, FontSet, FontSpec, fallback_fontsets, has_glyph, resolve_spec
 from termsnap.theme import DARK, ThemeSpec, get_theme
 from termsnap.width import cluster_width, clusters
@@ -132,7 +132,7 @@ def render_image(
             if span.style.dim:
                 foreground = _blend(foreground, background, _DIM_SHARE)
             if background != theme.background:
-                draw.rectangle((round(left), top, round(right) - 1, top + row_height - 1), fill=_rgb(background))
+                draw.rectangle((pixel(left), top, pixel(right) - 1, top + row_height - 1), fill=_rgb(background))
             offset = column
             for cluster in clusters(span.text):
                 x = margin + offset * cell
@@ -157,10 +157,10 @@ def render_image(
             column += span.width
             if span.style.underline:
                 y = baseline + max(2, descent // 3)
-                draw.rectangle((round(left), y, round(right) - 1, y + thickness - 1), fill=_rgb(foreground))
+                draw.rectangle((pixel(left), y, pixel(right) - 1, y + thickness - 1), fill=_rgb(foreground))
             if span.style.strike:
                 y = baseline - round(ascent * 0.3)
-                draw.rectangle((round(left), y, round(right) - 1, y + thickness - 1), fill=_rgb(foreground))
+                draw.rectangle((pixel(left), y, pixel(right) - 1, y + thickness - 1), fill=_rgb(foreground))
     return image
 
 

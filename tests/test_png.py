@@ -141,3 +141,19 @@ def test_real_command_output_is_rendered_with_its_colours(fonts: FontSet):
     capture = run([sys.executable, "-c", "print('\x1b[38;2;1;250;3mgreen\x1b[0m done')"])
     image = render_image(capture.lines, fonts=fonts, scale=2, font_size=28)
     assert (1, 250, 3) in pixels(image)
+
+
+@pytest.mark.parametrize("scale", [1, 2])
+@pytest.mark.parametrize("font_size", range(9, 31))
+def test_horizontal_box_lines_are_drawn_at_every_font_size(fonts: FontSet, font_size: int, scale: int):
+    # раньше при некоторых размерах горизонтальные линии пропадали (банковское округление края штриха)
+    lines = [Line((Span("┌──┬──┐"),)), Line((Span("│  │  │"),)), Line((Span("└──┴──┘"),))]
+    image = render_image(lines, fonts=fonts, font_size=font_size, scale=scale, padding=0)
+    background = image.getpixel((0, image.height // 2 + 1))
+    rows = image.height // 3
+    for band in (0, 2):
+        lit_per_row = [
+            sum(image.getpixel((x, y)) != background for x in range(image.width))
+            for y in range(band * rows, (band + 1) * rows)
+        ]
+        assert max(lit_per_row) >= image.width * 0.8, (font_size, scale, band)

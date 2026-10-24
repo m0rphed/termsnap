@@ -195,3 +195,30 @@ def test_other_characters_are_left_to_the_font():
     assert not draw_cell(ImageDraw.Draw(image), "╱", (0, 0, WIDTH, HEIGHT), FG, BG, 1)
     assert not draw_cell(ImageDraw.Draw(image), "ab", (0, 0, WIDTH, HEIGHT), FG, BG, 1)
     assert image.getcolors() == [(WIDTH * HEIGHT, BG)]
+
+
+# --- толщина линии не зависит от размера клетки и от того, куда она попала ---
+
+
+def strokes(char: str, width: int, height: int, light: int, shift: float) -> tuple[int, int]:
+    """
+    Сколько пикселей занимает линия поперек (по горизонтали для вертикальной, по вертикали для горизонтальной),
+    если рисовать клетку со сдвигом ``shift`` от целых координат.
+    """
+    image = Image.new("RGB", (width + 4, height + 4), BG)
+    box = (1 + shift, 1 + shift, 1 + shift + width, 1 + shift + height)
+    assert draw_cell(ImageDraw.Draw(image), char, box, FG, BG, light)
+    across = sum(lit(image, x, 3) for x in range(image.width))  # поперек вертикальной линии (строка у верхнего края)
+    along = sum(lit(image, 3, y) for y in range(image.height))  # поперек горизонтальной линии (столбец у левого края)
+    return across, along
+
+
+@pytest.mark.parametrize("shift", [0.0, 0.25, 0.5, 0.75])
+@pytest.mark.parametrize("light", [1, 2, 3])
+@pytest.mark.parametrize("size", [(8, 16), (9, 17), (10, 18), (11, 19), (12, 20), (13, 21), (14, 22), (15, 23)])
+def test_a_line_is_never_thinner_or_thicker_than_asked_in_any_cell(size: tuple[int, int], light: int, shift: float):
+    width, height = size
+    vertical_across, _ = strokes("│", width, height, light, shift)
+    _, horizontal_along = strokes("─", width, height, light, shift)
+    assert vertical_across == light
+    assert horizontal_along == light

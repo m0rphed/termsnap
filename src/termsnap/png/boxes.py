@@ -85,12 +85,22 @@ def arms_of(char: str) -> Arms | None:
     return Arms(**result, arc=arc)
 
 
+def pixel(value: float) -> int:
+    """
+    Номер пикселя границы: округление «половинки вверх», а не банковское ``round``. Банковское округляет
+    9.5 и 10.5 в одно число, и линия толщиной в один пиксель вокруг целой координаты исчезает (при нечетной
+    координате, наоборот, удваивается). Здесь края штриха сдвигаются вместе, поэтому его толщина не зависит от
+    положения.
+    """
+    return math.floor(value + 0.5)
+
+
 def _fill(draw: ImageDraw.ImageDraw, x0: float, y0: float, x1: float, y1: float, color: tuple[int, int, int]) -> None:
     """
     Закрашивает прямоугольник [x0, x1) x [y0, y1) в пикселях (границы округляются, минимум один пиксель).
     """
-    left, right = round(min(x0, x1)), round(max(x0, x1))
-    top, bottom = round(min(y0, y1)), round(max(y0, y1))
+    left, right = pixel(min(x0, x1)), pixel(max(x0, x1))
+    top, bottom = pixel(min(y0, y1)), pixel(max(y0, y1))
     if right > left and bottom > top:
         draw.rectangle((left, top, right - 1, bottom - 1), fill=color)
 
@@ -184,9 +194,9 @@ def _draw_arc(
     x0, y0, x1, y1 = box
     t = light
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-    px0, py0, px1, py1 = round(x0), round(y0), round(x1), round(y1)
-    left, right = round(cx - t / 2), round(cx + t / 2)  # столбцы вертикальной линии, как у ``_fill``
-    top, bottom = round(cy - t / 2), round(cy + t / 2)  # строки горизонтальной линии
+    px0, py0, px1, py1 = pixel(x0), pixel(y0), pixel(x1), pixel(y1)
+    left, right = pixel(cx - t / 2), pixel(cx + t / 2)  # столбцы вертикальной линии, как у ``_fill``
+    top, bottom = pixel(cy - t / 2), pixel(cy + t / 2)  # строки горизонтальной линии
     coverage = _arc_coverage(
         px1 - px0, py1 - py0, (left - px0, right - px0), (top - py0, bottom - py0), bool(arms.right), bool(arms.down)
     )
