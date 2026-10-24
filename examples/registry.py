@@ -5,10 +5,14 @@
 ruff); если нужного инструмента нет в системе, запись пропускается (``available``).
 """
 
+import os
 import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+from termsnap import Key, Keys, Pause, Snapshot, Step
 
 HERE = Path(__file__).resolve().parent
 PROGRAMS = HERE / "programs"
@@ -22,10 +26,32 @@ class Program:
     tool: str | None = None  # внешняя программа, без которой запись пропускается
     expect_failure: bool = False  # программа должна завершаться с ненулевым кодом (проверка pytest и ruff)
     colored: bool = True  # в выводе должны быть цвета
+    input: tuple[Step, ...] = ()  # шаги сценария: строки, клавиши, паузы (только псевдотерминал)
+    prompt: str | None = None  # как выглядит приглашение, когда программа ждет ввода
+    settle: float = 0.5  # сколько вывод должен молчать перед следующим шагом (0 - для постоянно перерисовываемых)
+    snapshot: Snapshot | None = None  # когда снять экран у программы, которая сама не завершается
+    isolated: bool = False  # без VIRTUAL_ENV: uvx-программы не должны думать, что работают в нашем окружении
+    posix_only: bool = False  # программа есть только в Linux и macOS
 
     @property
     def available(self) -> bool:
+        if self.posix_only and sys.platform == "win32":
+            return False
         return self.tool is None or shutil.which(self.tool) is not None
+
+    @property
+    def options(self) -> dict[str, Any]:
+        """
+        Аргументы ``termsnap.run`` для этой программы (кроме ``argv`` и ``backend``).
+        """
+        env = {key: value for key, value in os.environ.items() if not self.isolated or key != "VIRTUAL_ENV"}
+        return {
+            "env": env,
+            "input": self.input,
+            "prompt": self.prompt,
+            "settle": self.settle,
+            "snapshot": self.snapshot,
+        }
 
 
 def _script(name: str) -> str:
@@ -66,4 +92,58 @@ PTY_REGISTRY = [
     Program("rich_native", (PY, _script("rich_native.py"))),
     Program("full_screen", (PY, _script("full_screen.py"))),
     Program("long_output", (PY, _script("long_output.py"))),
+]
+
+#: Интерактивные программы (REPL): им печатается ввод, поэтому запускаются только через ``PtyBackend``. IPython берется
+#: через ``uvx`` (при первом запуске нужна сеть), ставить его в проект не нужно.
+INTERACTIVE = [
+    Program(
+        "mini_repl",
+        (PY, _script("mini_repl.py")),
+        input=("add 2 3", "slow", "bogus", "fail", "exit"),
+        prompt=r">>$",
+    ),
+    Program(
+        "ipython_session",
+        ("uvx", "--quiet", "ipython"),
+        tool="uvx",
+        input=(
+            "squares = [n ** 2 for n in range(6)]",
+            "squares",
+            "import math; math.pi",
+            "1 / 0",
+            "exit",
+        ),
+        prompt=r"In \[\d+\]:$",
+        isolated=True,
+    ),
+    # стрелка вверх достает прошлую строку из истории, Enter ее повторяет
+    Program(
+        "ipython_history",
+        ("uvx", "--quiet", "ipython", "--no-banner"),
+        tool="uvx",
+        input=("6 * 7", Key.UP, Key.ENTER, Pause(1), "exit"),
+        prompt=r"In \[\d+\]:$",
+        isolated=True,
+    ),
+    # Tab открывает меню автодополнения (первый раз оно появляется не сразу): снимок ждет его появления
+    Program(
+        "ipython_complete",
+        ("uvx", "--quiet", "ipython", "--no-banner"),
+        tool="uvx",
+        input=("import math", Keys("math.s"), Key.TAB),
+        prompt=r"In \[\d+\]:$",
+        snapshot=Snapshot(when=r"sqrt", after=0.3),
+        isolated=True,
+    ),
+    # программы, которые сами не завершаются: экран снимается в заданный момент, и программа останавливается
+    Program(
+        "live_monitor",
+        (PY, _script("live_monitor.py")),
+        input=(Keys("s"), Pause(0.4), Key.DOWN, Pause(0.4), Key.DOWN, Pause(0.4)),
+        settle=0,
+        snapshot=Snapshot(after=0.5),
+    ),
+    Program("htop", ("htop",), tool="htop", snapshot=Snapshot(when=r"Tasks:", after=2)),
+    Program("top", ("top",), tool="top", posix_only=True, snapshot=Snapshot(when=r"PID\s+USER", after=1)),
 ]

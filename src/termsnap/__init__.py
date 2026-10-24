@@ -14,6 +14,7 @@ from termsnap.backends import Backend, PipeBackend, PtyBackend, RawResult, Reque
 from termsnap.errors import RunTimeout, TermsnapError
 from termsnap.model import PLAIN, Color, Indexed, Line, Rgb, Span, Style
 from termsnap.runner import Capture, run, terminal_environment
+from termsnap.steps import Key, Keys, Pause, Snapshot, Step
 from termsnap.theme import DARK, LIGHT, Theme
 
 __all__ = [
@@ -24,14 +25,19 @@ __all__ = [
     "Capture",
     "Color",
     "Indexed",
+    "Key",
+    "Keys",
     "Line",
+    "Pause",
     "PipeBackend",
     "PtyBackend",
     "RawResult",
     "Request",
     "Rgb",
     "RunTimeout",
+    "Snapshot",
     "Span",
+    "Step",
     "Style",
     "TermsnapError",
     "Theme",

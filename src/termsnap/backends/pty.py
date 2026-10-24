@@ -32,12 +32,12 @@ class PtyBackend:
         if sys.platform == "win32":
             from termsnap.backends import _conpty
 
-            output, code = _conpty.run(executable, request)
+            output, code, stopped = _conpty.run(executable, request)
         else:
             from termsnap.backends import _posix_pty
 
-            output, code = _posix_pty.run(executable, request)
-        return RawResult(output, code, time.perf_counter() - started)
+            output, code, stopped = _posix_pty.run(executable, request)
+        return RawResult(output, code, time.perf_counter() - started, stopped)
 
     def interpret(self, output: bytes, request: Request, encoding: str) -> tuple[Line, ...]:
         from termsnap import screen

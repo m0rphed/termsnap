@@ -22,6 +22,8 @@ class PipeBackend:
     """
 
     def run(self, request: Request) -> RawResult:
+        if request.input or request.snapshot is not None:
+            raise ValueError("PipeBackend не умеет вводить текст и снимать экран: для этого нужен PtyBackend")
         executable = shutil.which(request.argv[0], path=request.env.get("PATH"))
         if executable is None:
             raise FileNotFoundError(f"программа {request.argv[0]!r} не найдена в PATH")

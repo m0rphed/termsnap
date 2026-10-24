@@ -6,13 +6,14 @@
     uv run python examples/gallery.py [--pty] [имя ...]
 
 С ``--pty`` все программы запускаются в псевдотерминале (``PtyBackend``, нужен ``termsnap[pty]``) и к ним
-добавляются программы, которым нужен терминал; картинки получают суффикс ``-pty``.
+добавляются программы, которым нужен терминал, и интерактивные сеансы (REPL с вводом); картинки получают
+суффикс ``-pty``.
 """
 
 import sys
 from pathlib import Path
 
-from registry import PTY_REGISTRY, REGISTRY
+from registry import INTERACTIVE, PTY_REGISTRY, REGISTRY
 
 from termsnap import DARK, PtyBackend, run
 from termsnap.png import render_png
@@ -25,13 +26,13 @@ def main(names: list[str], *, pty: bool) -> None:
     backend = PtyBackend() if pty else None
     suffix = "-pty" if pty else ""
     print(f"{'программа':18} {'код':>3} {'строк':>5} {'ширина':>6} {'ESC':>3} {'с':>6}  png")
-    for program in [*REGISTRY, *PTY_REGISTRY] if pty else REGISTRY:
+    for program in [*REGISTRY, *PTY_REGISTRY, *INTERACTIVE] if pty else REGISTRY:
         if names and program.name not in names:
             continue
         if not program.available:
             print(f"{program.name:18} пропущена: нет {program.tool}")
             continue
-        capture = run(program.argv, timeout=60, backend=backend)
+        capture = run(program.argv, timeout=120, backend=backend, **program.options)
         width = max((line.width for line in capture.lines), default=0)
         stray = capture.text.count("\x1b")
         path = OUT / f"{program.name}{suffix}.png"

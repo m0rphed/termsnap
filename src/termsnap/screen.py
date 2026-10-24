@@ -9,6 +9,7 @@
 остается в силе, и поддерживается «тусклый» атрибут (SGR 2), который ``pyte`` отбрасывает.
 """
 
+import codecs
 from itertools import groupby
 
 import pyte
@@ -45,6 +46,14 @@ class _Screen(pyte.HistoryScreen):
     Вывод текста переопределен: ``pyte`` на первом же символе нулевой ширины (селектор эмодзи, соединитель ZWJ)
     бросает остаток строки, а здесь текст делится на те же кластеры, что и в ``termsnap.width``.
     """
+
+    def __init__(self, columns: int, lines: int, history: int) -> None:
+        super().__init__(columns, lines, history=history)
+        #: Ответы на запросы программы (позиция курсора и т.п.), которые терминал должен вернуть ей на вход.
+        self.replies: list[str] = []
+
+    def write_process_input(self, data: str) -> None:
+        self.replies.append(data)
 
     def draw(self, data: str) -> None:
         data = data.translate(self.g1_charset if self.charset else self.g0_charset)
@@ -136,6 +145,30 @@ def _line(cells: list[Char]) -> Line:
         cells.pop()
     groups = groupby(cells, _style)
     return Line(tuple(Span("".join(cell.data for cell in group), style) for style, group in groups))
+
+
+class Responder:
+    """
+    Живой терминал, который только отвечает программе: вывод подается по мере появления, а в ответ возвращаются
+    байты, которые настоящий терминал отправил бы на вход программы (позиция курсора на ``ESC[6n``, тип терминала
+    на ``ESC[c``). Без ответа библиотеки вроде ``prompt_toolkit`` (IPython) пишут, что терминал не поддерживает
+    запрос позиции курсора, и работают хуже. Нужен там, где псевдотерминал сам не отвечает (Linux и macOS; ConPTY
+    в Windows отвечает сам, второй ответ только засорил бы ввод).
+    """
+
+    def __init__(self, columns: int, rows: int) -> None:
+        self._screen = _Screen(columns, rows, history=1)
+        self._stream = pyte.Stream(self._screen)
+        self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+
+    def feed(self, data: bytes) -> bytes:
+        """
+        Принимает очередную порцию вывода (в том числе обрезанную посреди символа) и возвращает ответы на запросы.
+        """
+        self._stream.feed(self._decoder.decode(data))
+        reply = "".join(self._screen.replies)
+        self._screen.replies.clear()
+        return reply.encode()
 
 
 def render(text: str, *, columns: int, rows: int) -> tuple[Line, ...]:

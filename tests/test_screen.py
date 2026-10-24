@@ -3,7 +3,7 @@ import pytest
 pytest.importorskip("pyte")
 
 from termsnap import PLAIN, Indexed, Rgb, Style
-from termsnap.screen import render
+from termsnap.screen import Responder, render
 
 ESC = "\x1b"
 VS16 = chr(0xFE0F)
@@ -108,3 +108,36 @@ def test_combining_marks_join_the_previous_character():
 
 def test_window_and_mode_sequences_leave_no_trace():
     assert texts(f"{ESC}[1t{ESC}[c{ESC}[?1004h{ESC}[?25l{ESC}]0;title\x07text") == ["text"]
+
+
+# --- ответы на запросы программы к терминалу ---
+
+
+def test_responder_answers_cursor_position_requests():
+    responder = Responder(80, 24)
+    assert responder.feed(f"abc{ESC}[6n".encode()) == f"{ESC}[1;4R".encode()
+    assert responder.feed(f"{ESC}[3;5H{ESC}[6n".encode()) == f"{ESC}[3;5R".encode()
+
+
+def test_responder_answers_device_attribute_and_status_requests():
+    assert Responder(80, 24).feed(f"{ESC}[c".encode()) == f"{ESC}[?6c".encode()
+    assert Responder(80, 24).feed(f"{ESC}[5n".encode()) == f"{ESC}[0n".encode()
+
+
+def test_responder_is_silent_for_ordinary_output():
+    responder = Responder(80, 24)
+    assert responder.feed(f"hello {ESC}[1;31mred{ESC}[0m".encode()) == b""
+
+
+def test_responder_copes_with_characters_and_requests_split_between_chunks():
+    data = f"привет{ESC}[6n".encode()
+    responder = Responder(80, 24)
+    assert responder.feed(data[:3]) == b""  # оборвано посреди буквы
+    assert responder.feed(data[3:-2]) == b""  # и посреди запроса
+    assert responder.feed(data[-2:]) == f"{ESC}[1;7R".encode()
+
+
+def test_responder_does_not_repeat_old_answers():
+    responder = Responder(80, 24)
+    assert responder.feed(f"{ESC}[6n".encode())
+    assert responder.feed(b"more") == b""

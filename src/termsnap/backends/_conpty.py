@@ -11,6 +11,7 @@ from threading import Thread
 
 from winpty import PtyProcess
 
+from termsnap.backends._typist import Typist
 from termsnap.backends.base import Request
 from termsnap.errors import RunTimeout
 
@@ -19,9 +20,10 @@ _QUIET = 0.3
 _POLL = 0.01
 
 
-def run(executable: str, request: Request) -> tuple[bytes, int]:
+def run(executable: str, request: Request) -> tuple[bytes, int, bool]:
     """
-    Запускает команду в ConPTY и возвращает весь вывод (в UTF-8) и код возврата.
+    Запускает команду в ConPTY и возвращает весь вывод (в UTF-8), код возврата и признак того, что программу
+    остановили по ``Request.snapshot``.
     """
     process = PtyProcess.spawn(
         [executable, *request.argv[1:]],
@@ -31,6 +33,7 @@ def run(executable: str, request: Request) -> tuple[bytes, int]:
     )
     chunks: list[str] = []
     last_output = time.monotonic()
+    typist = Typist(request, started=last_output)
 
     def pump() -> None:
         nonlocal last_output
@@ -50,9 +53,19 @@ def run(executable: str, request: Request) -> tuple[bytes, int]:
             process.terminate(force=True)
             assert request.timeout is not None
             raise RunTimeout(request.argv, request.timeout, "".join(chunks).encode())
-        if not process.isalive() and now - last_output >= _QUIET:
+        alive = process.isalive()
+        if not alive and now - last_output >= _QUIET:
             break
+        if alive and typist.watching:
+            text = typist.next(now, last_output, lambda: "".join(chunks))
+            if text is not None:
+                process.write(text)
+            if typist.snapshot_due(now, last_output, lambda: "".join(chunks)):
+                output = "".join(chunks).encode()
+                process.terminate(force=True)
+                process.close()
+                return output, -1, True
         time.sleep(_POLL)
     code = process.exitstatus
     process.close()
-    return "".join(chunks).encode(), -1 if code is None else code
+    return "".join(chunks).encode(), -1 if code is None else code, False
