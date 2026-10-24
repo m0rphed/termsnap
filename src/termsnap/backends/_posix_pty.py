@@ -87,7 +87,9 @@ def run(executable: str, request: Request) -> tuple[bytes, int, bool]:
     finally:
         os.close(master)
         if timed_out or stopped:
-            with contextlib.suppress(ProcessLookupError):
+            # macOS: setuid-программам (top) обычный пользователь сигналы слать не может (EPERM), но закрытый
+            # master уже заставил ядро послать сеансу SIGHUP, этого хватает
+            with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(process.pid, signal.SIGKILL)
         code = process.wait()
     output = b"".join(chunks)

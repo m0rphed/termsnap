@@ -190,3 +190,20 @@ def test_visible_only_keeps_the_final_screen_of_a_stopped_program():
     assert everything.stopped and visible.stopped
     assert len(everything.lines) == 50
     assert [line.text for line in visible.lines] == [f"line {number}" for number in range(42, 51)]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="сигналы группе процессов есть только в POSIX")
+def test_a_program_that_cannot_be_signalled_is_still_stopped_by_hanging_up_the_terminal(monkeypatch):
+    # macOS: setuid-программе (top) нельзя послать SIGKILL, killpg отвечает EPERM
+    import os
+
+    def forbidden(pid: int, sig: int) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "killpg", forbidden)
+    from termsnap import Snapshot
+
+    code = "import time; print('ready', flush=True); time.sleep(60)"
+    capture = run(python(code), backend=PTY, snapshot=Snapshot(after=0.5), timeout=30)
+    assert capture.stopped
+    assert capture.text == "ready"
