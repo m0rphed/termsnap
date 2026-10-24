@@ -12,13 +12,22 @@ from threading import Thread
 # pywinpty ставится только в Windows, а типы проверяются и в Linux и macOS (CI): там модуль не импортируется
 from winpty import PtyProcess  # pyright: ignore[reportMissingImports]
 
-from termsnap.backends._typist import Typist
-from termsnap.backends.base import Request
+from termsnap.backends.pty.typist import Typist
 from termsnap.errors import RunTimeout
+from termsnap.request import Request
 
 #: Сколько вывод должен молчать после завершения процесса, чтобы считать его полностью прочитанным, секунд.
-_QUIET = 0.3
-_POLL = 0.01
+#: Меньше - можно потерять последние строки, которые ConPTY еще не отдал; больше - зря растет время запуска.
+QUIET_AFTER_EXIT = 0.3
+
+#: Как часто, секунд, главный цикл смотрит на процесс и сценарий.
+POLL_INTERVAL = 0.01
+
+#: Сколько символов читать за раз.
+READ_SIZE = 65536
+
+#: Код возврата, когда его нет: процесс убит нами или статус не получен.
+NO_EXIT_CODE = -1
 
 
 def run(executable: str, request: Request) -> tuple[bytes, int, bool]:
@@ -37,10 +46,13 @@ def run(executable: str, request: Request) -> tuple[bytes, int, bool]:
     typist = Typist(request, started=last_output)
 
     def pump() -> None:
+        """
+        Читает вывод в отдельном потоке: ``read`` блокирует, а главному циклу нужно следить за временем и сценарием.
+        """
         nonlocal last_output
         while True:
             try:
-                chunks.append(process.read(65536))
+                chunks.append(process.read(READ_SIZE))
             except (EOFError, OSError):
                 return
             last_output = time.perf_counter()
@@ -55,7 +67,7 @@ def run(executable: str, request: Request) -> tuple[bytes, int, bool]:
             assert request.timeout is not None
             raise RunTimeout(request.argv, request.timeout, "".join(chunks).encode())
         alive = process.isalive()
-        if not alive and now - last_output >= _QUIET:
+        if not alive and now - last_output >= QUIET_AFTER_EXIT:
             break
         if alive and typist.watching:
             text = typist.next(now, last_output, lambda: "".join(chunks))
@@ -65,8 +77,8 @@ def run(executable: str, request: Request) -> tuple[bytes, int, bool]:
                 output = "".join(chunks).encode()
                 process.terminate(force=True)
                 process.close()
-                return output, -1, True
-        time.sleep(_POLL)
+                return output, NO_EXIT_CODE, True
+        time.sleep(POLL_INTERVAL)
     code = process.exitstatus
     process.close()
-    return "".join(chunks).encode(), -1 if code is None else code, False
+    return "".join(chunks).encode(), NO_EXIT_CODE if code is None else code, False

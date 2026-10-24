@@ -13,12 +13,17 @@ import subprocess
 import termios
 import time
 
-from termsnap.backends._typist import Typist
-from termsnap.backends.base import Request
+from termsnap.backends.pty.typist import Typist
 from termsnap.errors import RunTimeout
+from termsnap.request import Request
 from termsnap.screen import Responder
 
-_POLL = 0.02
+#: Самое долгое ожидание вывода, секунд, пока идет сценарий: после него цикл проверяет, не пора ли печатать
+#: следующий шаг или снимать экран.
+POLL_INTERVAL = 0.02
+
+#: Сколько байт читать за раз.
+READ_SIZE = 65536
 
 
 def run(executable: str, request: Request) -> tuple[bytes, int, bool]:
@@ -55,6 +60,8 @@ def run(executable: str, request: Request) -> tuple[bytes, int, bool]:
     def output_text() -> str:
         return b"".join(chunks).decode("utf-8", errors="replace")
 
+    # цикл: до дедлайна ->  напечатать готовый шаг сценария / снять экран, если пора ->
+    #       ждать вывод (select) -> прочитать порцию, ответить на запросы терминала
     try:
         while True:
             now = time.perf_counter()
@@ -69,12 +76,12 @@ def run(executable: str, request: Request) -> tuple[bytes, int, bool]:
                 if typist.snapshot_due(now, last_output, output_text):
                     stopped = True
                     break
-                remaining = _POLL if remaining is None else min(remaining, _POLL)
+                remaining = POLL_INTERVAL if remaining is None else min(remaining, POLL_INTERVAL)
             ready, _, _ = select.select([master], [], [], remaining)
             if not ready:
                 continue
             try:
-                data = os.read(master, 65536)
+                data = os.read(master, READ_SIZE)
             except OSError:  # Linux: все копии конца терминала закрыты (EIO)
                 break
             if not data:

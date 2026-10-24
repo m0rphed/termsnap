@@ -105,7 +105,14 @@ def test_color_of_a_wrong_kind_or_out_of_range_is_rejected():
 
 
 def test_derive_changes_only_what_is_given_and_keeps_the_original():
-    custom = DARK.derive(background="#101010", ansi={"red": "#ff5555", 4: (0, 0, 255), "Bright-Green": "0f0"})
+    custom = DARK.derive(
+        background="#101010",
+        ansi={
+            "red": "#ff5555",
+            4: (0, 0, 255),
+            "Bright-Green": "0f0",
+        },
+    )
     assert custom.background == Rgb(16, 16, 16)
     assert custom.foreground == DARK.foreground
     assert custom.ansi[1] == Rgb(0xFF, 0x55, 0x55)
@@ -181,7 +188,7 @@ def test_get_theme_reports_unknown_names_and_wrong_types():
 
 
 def test_registered_theme_is_found_by_name(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr("termsnap.theme.THEMES", dict(THEMES))  # чтобы не оставлять тему на другие тесты
+    monkeypatch.setattr("termsnap.theme.registry.THEMES", dict(THEMES))  # чтобы не оставлять тему на другие тесты
     mine = DARK.derive(background="#000000", name="mine")
     register_theme("  Mine ", mine)
     assert get_theme("mine") is mine

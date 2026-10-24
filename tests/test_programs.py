@@ -157,7 +157,7 @@ def test_ruff_diagnostics(captures):
     assert "bad_style.py" in text
 
 
-# --------------------------------------------------------------------------------------------- картинки
+# - картинки- 
 def test_every_program_renders_to_png(captures):
     pytest.importorskip("PIL")
     from PIL import Image

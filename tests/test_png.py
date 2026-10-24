@@ -64,7 +64,13 @@ def test_theme_decides_the_background(fonts: FontSet):
 def test_span_background_fills_its_cells(fonts: FontSet):
     colour = Rgb(10, 20, 30)
     lines = [Line((Span("   ", Style(bg=colour)),))]
-    image = render_image(lines, fonts=fonts, scale=1, padding=0, theme=LIGHT)
+    image = render_image(
+        lines,
+        fonts=fonts,
+        scale=1,
+        padding=0,
+        theme=LIGHT,
+    )
     assert image.getpixel((1, 1)) == (10, 20, 30)
     assert image.getpixel((image.width - 1, image.height - 1)) == (10, 20, 30)
 
@@ -72,24 +78,50 @@ def test_span_background_fills_its_cells(fonts: FontSet):
 def test_text_is_drawn_in_the_style_colour(fonts: FontSet):
     colour = Rgb(250, 10, 10)
     lines = [Line((Span("MMMM", Style(fg=colour)),))]
-    image = render_image(lines, fonts=fonts, scale=1, font_size=28, theme=LIGHT)
+    image = render_image(
+        lines,
+        fonts=fonts,
+        scale=1,
+        font_size=28,
+        theme=LIGHT,
+    )
     assert (250, 10, 10) in pixels(image)
 
 
 def test_inverse_swaps_text_and_background_colours(fonts: FontSet):
     lines = [Line((Span("   ", Style(inverse=True)),))]
-    image = render_image(lines, fonts=fonts, scale=1, padding=0, theme=DARK)
+    image = render_image(
+        lines,
+        fonts=fonts,
+        scale=1,
+        padding=0,
+        theme=DARK,
+    )
     assert image.getpixel((1, 1)) == rgb(DARK.foreground)
 
 
 def test_underline_and_strike_are_horizontal_lines_over_the_whole_span(fonts: FontSet):
     colour = Rgb(1, 200, 3)
-    plain = render_image([Line((Span("MMMM", Style(fg=colour)),))], fonts=fonts, scale=1, font_size=28, theme=LIGHT)
+    plain = render_image(
+        [Line((Span("MMMM", Style(fg=colour)),))],
+        fonts=fonts,
+        scale=1,
+        font_size=28,
+        theme=LIGHT,
+    )
     underlined = render_image(
-        [Line((Span("MMMM", Style(fg=colour, underline=True)),))], fonts=fonts, scale=1, font_size=28, theme=LIGHT
+        [Line((Span("MMMM", Style(fg=colour, underline=True)),))],
+        fonts=fonts,
+        scale=1,
+        font_size=28,
+        theme=LIGHT,
     )
     struck = render_image(
-        [Line((Span("MMMM", Style(fg=colour, strike=True)),))], fonts=fonts, scale=1, font_size=28, theme=LIGHT
+        [Line((Span("MMMM", Style(fg=colour, strike=True)),))],
+        fonts=fonts,
+        scale=1,
+        font_size=28,
+        theme=LIGHT,
     )
 
     def long_rows(image: Image.Image) -> int:
@@ -106,17 +138,35 @@ def test_underline_and_strike_are_horizontal_lines_over_the_whole_span(fonts: Fo
 
 
 def test_dim_text_is_closer_to_the_background(fonts: FontSet):
-    bright = render_image([Line((Span("MMMM", Style(fg=Rgb(255, 255, 255))),))], fonts=fonts, scale=1, font_size=28)
+    bright = render_image(
+        [Line((Span("MMMM", Style(fg=Rgb(255, 255, 255))),))],
+        fonts=fonts,
+        scale=1,
+        font_size=28,
+    )
     dim = render_image(
-        [Line((Span("MMMM", Style(fg=Rgb(255, 255, 255), dim=True)),))], fonts=fonts, scale=1, font_size=28
+        [Line((Span("MMMM", Style(fg=Rgb(255, 255, 255), dim=True)),))],
+        fonts=fonts,
+        scale=1,
+        font_size=28,
     )
     assert max(sum(p) for p in pixels(bright)) > max(sum(p) for p in pixels(dim))
 
 
 def test_bold_text_is_heavier_even_without_a_bold_face(fonts: FontSet):
     only_regular = FontSet(fonts.family, fonts.regular)
-    light = render_image([Line((Span("MMMM"),))], fonts=only_regular, scale=2, font_size=20)
-    heavy = render_image([Line((Span("MMMM", Style(bold=True)),))], fonts=only_regular, scale=2, font_size=20)
+    light = render_image(
+        [Line((Span("MMMM"),))],
+        fonts=only_regular,
+        scale=2,
+        font_size=20,
+    )
+    heavy = render_image(
+        [Line((Span("MMMM", Style(bold=True)),))],
+        fonts=only_regular,
+        scale=2,
+        font_size=20,
+    )
 
     def ink(image: Image.Image) -> int:
         background = image.getpixel((0, 0))
@@ -148,7 +198,13 @@ def test_real_command_output_is_rendered_with_its_colours(fonts: FontSet):
 def test_horizontal_box_lines_are_drawn_at_every_font_size(fonts: FontSet, font_size: int, scale: int):
     # раньше при некоторых размерах горизонтальные линии пропадали (банковское округление края штриха)
     lines = [Line((Span("┌──┬──┐"),)), Line((Span("│  │  │"),)), Line((Span("└──┴──┘"),))]
-    image = render_image(lines, fonts=fonts, font_size=font_size, scale=scale, padding=0)
+    image = render_image(
+        lines,
+        fonts=fonts,
+        font_size=font_size,
+        scale=scale,
+        padding=0,
+    )
     background = image.getpixel((0, image.height // 2 + 1))
     rows = image.height // 3
     for band in (0, 2):

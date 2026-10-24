@@ -8,7 +8,7 @@ from PIL import ImageFont
 
 from termsnap.errors import FontNotFound
 from termsnap.png import fonts
-from termsnap.png.fonts import Face, FontSet, parse_fc_list, registry_name_matches
+from termsnap.png.fonts import Face, FontSet, fontconfig, parse_fc_list, registry_name_matches, resolution
 
 
 def face(style: str, family: str = "Fam", name: str | None = None) -> Face:
@@ -136,7 +136,7 @@ def test_fc_list_keeps_the_face_number_inside_a_collection():
 
 
 def test_fc_pattern_escapes_special_characters():
-    assert fonts._fc_escape("Noto Sans Mono-Bold:1,2=3") == r"Noto Sans Mono\-Bold\:1\,2\=3"
+    assert fontconfig.escape_value("Noto Sans Mono-Bold:1,2=3") == r"Noto Sans Mono\-Bold\:1\,2\=3"
 
 
 def test_unreadable_file_has_no_faces(tmp_path: Path):
@@ -156,15 +156,15 @@ def test_resolve_skips_missing_families_and_families_without_the_needed_glyphs(m
         "Poor": FontSet.from_faces([face("Regular", "Poor")]),
         "Rich": FontSet.from_faces([face("Regular", "Rich")]),
     }
-    monkeypatch.setattr(fonts, "find_family", sets.get)
-    monkeypatch.setattr(fonts, "missing_glyphs", lambda face, chars: "Ж" if face.family == "Poor" else "")
+    monkeypatch.setattr(resolution, "find_family", sets.get)
+    monkeypatch.setattr(resolution, "missing_glyphs", lambda face, chars: "Ж" if face.family == "Poor" else "")
     assert fonts.resolve(["Absent", "Poor", "Rich"], covers="Ж").family == "Rich"
     with pytest.raises(FontNotFound) as caught:
         fonts.resolve(["Absent", "Poor"], covers="Ж")
     assert caught.value.problems == ["Absent: не установлен", "Poor: нет символов 'Ж'"]
 
 
-# --------------------------------------------------------------------- шрифты, установленные в системе
+# - шрифты, установленные в системе -
 @pytest.fixture(scope="module")
 def system_fonts() -> FontSet:
     try:
@@ -175,14 +175,23 @@ def system_fonts() -> FontSet:
 
 def test_the_default_family_is_found_in_the_system_and_loads(system_fonts: FontSet):
     assert system_fonts.family
-    font = ImageFont.truetype(str(system_fonts.regular.path), size=20, index=system_fonts.regular.index)
+    font = ImageFont.truetype(
+        str(system_fonts.regular.path),
+        size=20,
+        index=system_fonts.regular.index,
+    )
     assert font.getname()[0].casefold() == system_fonts.family.casefold()
     assert not system_fonts.regular.bold
     assert not system_fonts.regular.italic
 
 
 def test_every_face_of_the_found_family_belongs_to_it(system_fonts: FontSet):
-    for found in (system_fonts.regular, system_fonts.bold, system_fonts.italic, system_fonts.bold_italic):
+    for found in (
+        system_fonts.regular,
+        system_fonts.bold,
+        system_fonts.italic,
+        system_fonts.bold_italic,
+    ):
         if found is not None:
             assert found.family.casefold() == system_fonts.family.casefold()
             assert found.path.is_file()
@@ -194,7 +203,11 @@ def test_find_family_is_case_insensitive_and_unknown_family_is_none(system_fonts
 
 
 def test_glyph_check_tells_cyrillic_from_missing_symbols(system_fonts: FontSet):
-    font = ImageFont.truetype(str(system_fonts.regular.path), size=24, index=system_fonts.regular.index)
+    font = ImageFont.truetype(
+        str(system_fonts.regular.path),
+        size=24,
+        index=system_fonts.regular.index,
+    )
     assert fonts.has_glyph(font, "A")
     assert fonts.has_glyph(font, "Ж")
     assert not fonts.has_glyph(font, "\U0010ffff")

@@ -130,7 +130,7 @@ def test_non_ascii_text_is_kept():
     assert [line.text for line in parse(f"{ESC}[36mПривет, мир{ESC}[0m")] == ["Привет, мир"]
 
 
-# --------------------------------------------------------------------------- перемещение курсора и стирание экрана
+# - перемещение курсора и стирание экрана -
 def texts(text: str) -> list[str]:
     return [line.text for line in parse(text)]
 

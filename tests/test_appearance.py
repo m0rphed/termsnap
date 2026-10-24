@@ -13,6 +13,7 @@ from PIL import Image
 from termsnap import DARK, LIGHT, Indexed, Line, Rgb, Span, Style
 from termsnap.errors import FontNotFound
 from termsnap.png import DEFAULT_FAMILIES, Face, FontSet, fonts, from_files, render_image, render_png, resolve_spec
+from termsnap.png.fonts import resolution
 
 
 def face(family: str) -> Face:
@@ -43,8 +44,8 @@ def system_fonts() -> FontSet:
 @pytest.fixture
 def fake_families(monkeypatch: pytest.MonkeyPatch) -> dict[str, FontSet]:
     installed = {name: fontset(name) for name in ("Poor", "Rich", "Other")}
-    monkeypatch.setattr(fonts, "find_family", installed.get)
-    monkeypatch.setattr(fonts, "missing_glyphs", lambda face, chars: "Ж" if face.family == "Poor" else "")
+    monkeypatch.setattr(resolution, "find_family", installed.get)
+    monkeypatch.setattr(resolution, "missing_glyphs", lambda face, chars: "Ж" if face.family == "Poor" else "")
     return installed
 
 
@@ -80,7 +81,7 @@ def test_an_empty_list_is_rejected(fake_families: dict[str, FontSet]):
 
 def test_the_defaults_are_used_without_a_spec(monkeypatch: pytest.MonkeyPatch):
     asked: list[str] = []
-    monkeypatch.setattr(fonts, "find_family", lambda family: asked.append(family))
+    monkeypatch.setattr(resolution, "find_family", lambda family: asked.append(family))
     with pytest.raises(FontNotFound):
         resolve_spec(None)
     assert tuple(asked[: len(DEFAULT_FAMILIES)]) == DEFAULT_FAMILIES  # дальше те же семейства пробует resolve_best
@@ -90,7 +91,7 @@ def test_user_families_can_be_followed_by_the_defaults(
     fake_families: dict[str, FontSet], monkeypatch: pytest.MonkeyPatch
 ):
     installed = {**fake_families, DEFAULT_FAMILIES[0]: fontset(DEFAULT_FAMILIES[0])}
-    monkeypatch.setattr(fonts, "find_family", installed.get)
+    monkeypatch.setattr(resolution, "find_family", installed.get)
     assert resolve_spec(["Absent", *DEFAULT_FAMILIES]).family == DEFAULT_FAMILIES[0]
 
 

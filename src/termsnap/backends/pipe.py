@@ -2,14 +2,14 @@
 Запуск через каналы: стандартные вывод и ошибки читаются из одного канала, ввода нет.
 """
 
-import shutil
 import subprocess
 import time
 
 from termsnap.ansi import parse
-from termsnap.backends.base import RawResult, Request
+from termsnap.backends.executable import find_executable
 from termsnap.errors import RunTimeout
 from termsnap.model import Line
+from termsnap.request import RawResult, Request
 
 
 class PipeBackend:
@@ -26,9 +26,7 @@ class PipeBackend:
             raise ValueError(
                 "PipeBackend не умеет вводить текст, снимать экран и выбирать видимую часть: нужен PtyBackend"
             )
-        executable = shutil.which(request.argv[0], path=request.env.get("PATH"))
-        if executable is None:
-            raise FileNotFoundError(f"программа {request.argv[0]!r} не найдена в PATH")
+        executable = find_executable(request)
         started = time.perf_counter()
         with subprocess.Popen(
             [executable, *request.argv[1:]],
@@ -36,13 +34,13 @@ class PipeBackend:
             env=dict(request.env),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            stderr=subprocess.STDOUT,  # ошибки в тот же канал: порядок строк как в терминале
         ) as process:
             try:
                 output, _ = process.communicate(timeout=request.timeout)
             except subprocess.TimeoutExpired as expired:
                 process.kill()
-                output, _ = process.communicate()
+                output, _ = process.communicate()  # то, что успело появиться, отдаем вместе с ошибкой
                 assert request.timeout is not None
                 raise RunTimeout(request.argv, request.timeout, output) from expired
         return RawResult(output, process.returncode, time.perf_counter() - started)

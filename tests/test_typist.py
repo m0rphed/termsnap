@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("pyte")
 
 from termsnap import Key, Keys, Pause, Request, Snapshot, Step
-from termsnap.backends._typist import Typist
+from termsnap.backends.pty.typist import Typist
 
 PROMPT = r">>$"
 
