@@ -7,8 +7,9 @@
 import io
 
 import pytest
+from support import require_module
 
-pytest.importorskip("PIL")
+require_module("PIL")
 
 from PIL import Image
 

@@ -19,13 +19,25 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import nodejs_wheel.executable
 import pytest
+from support import EXPECTED_SKIP
 
 from termsnap import Key, Keys, Pause, Snapshot, Step
+
+
+def _node() -> str:
+    """
+    Node.js из окружения проекта (пакет ``nodejs-wheel-binaries``, версия в ``uv.lock``): системный у всех свой.
+    """
+    root = Path(nodejs_wheel.executable.ROOT_DIR)
+    return str(root / "node.exe") if sys.platform == "win32" else str(root / "bin" / "node")
+
 
 HERE = Path(__file__).resolve().parent
 PROGRAMS = HERE / "programs"
 PY = sys.executable
+NODE = _node()
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,8 +91,8 @@ REGISTRY = [
     Program("rich_progress", (PY, _script("rich_progress.py"))),
     Program("rich_live", (PY, _script("rich_live.py"))),
     Program("rich_misc", (PY, _script("rich_misc.py"))),
-    Program("node_inspect", ("node", _script("node_inspect.js")), tool="node", external=True),
-    Program("node_ansi", ("node", _script("node_ansi.js")), tool="node", external=True),
+    Program("node_inspect", (NODE, _script("node_inspect.js")), external=True),
+    Program("node_ansi", (NODE, _script("node_ansi.js")), external=True),
     Program("git_log", (PY, _script("git_history.py")), tool="git", external=True),
     Program(
         "pytest_failure",
@@ -236,7 +248,7 @@ def require(program: Program) -> None:
     """
     reason = program.absent.get(sys.platform)
     if reason is not None:
-        pytest.skip(f"{program.name}: {reason}")
+        pytest.skip(f"{EXPECTED_SKIP}: {program.name}: {reason}")
     if program.tool is not None and shutil.which(program.tool) is None:
         pytest.fail(
             f"{program.name}: нужна программа {program.tool!r}, а ее нет в PATH "

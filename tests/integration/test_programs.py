@@ -6,9 +6,8 @@
 Версии rich держит ``uv.lock``: вывод программ от них зависит, поэтому после обновления rich ожидания надо сверить.
 """
 
-import io
-
 import pytest
+from picture import check_snapshot_picture
 from registry import REGISTRY, Program
 from styles import rstripped, styles_by_text
 
@@ -268,17 +267,5 @@ def test_rich_traceback_shows_the_error_and_the_failing_line(captures):
 
 # - картинки -
 @pytest.mark.parametrize("program", PROJECT, ids=lambda program: program.name)
-def test_every_program_renders_to_png(program: Program, captures):
-    pytest.importorskip("PIL")
-    from PIL import Image
-
-    from termsnap.errors import FontNotFound
-    from termsnap.png import render_png
-
-    try:
-        data = render_png(captures(program.name).lines, font_size=12, scale=1)
-    except FontNotFound as error:
-        pytest.skip(f"нет моноширинного шрифта: {error.problems}")
-    image = Image.open(io.BytesIO(data))
-    assert image.width > 100
-    assert image.height > 10
+def test_every_program_renders_to_a_picture_that_follows_its_screen(program: Program, captures, bundled_fonts):
+    check_snapshot_picture(captures(program.name).lines, bundled_fonts)

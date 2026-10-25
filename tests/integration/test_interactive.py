@@ -2,16 +2,15 @@
 Настоящие запуски интерактивных программ: REPL с вводом и долгие программы со снимком экрана в заданный момент.
 """
 
-import io
 import re
 import sys
 
 import pytest
+from picture import check_snapshot_picture
 from registry import INTERACTIVE, PROGRAMS, Program
+from support import require_pty_extras, skip_on
 
-pytest.importorskip("pyte")
-if sys.platform == "win32":
-    pytest.importorskip("winpty")
+require_pty_extras()
 
 from termsnap import (
     Capture,
@@ -117,7 +116,7 @@ def test_pipe_backend_refuses_input_and_snapshot():
         run([sys.executable, "-c", "pass"], backend=PipeBackend(), capture_visible_only=True)
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="ConPTY отвечает на запросы терминала сам")
+@skip_on("win32", "ConPTY отвечает на запросы терминала сам")
 def test_terminal_answers_the_cursor_position_request_of_a_program():
     code = (
         "import os, sys, tty; tty.setraw(0); sys.stdout.write('ab' + chr(27) + '[6n'); sys.stdout.flush(); "
@@ -242,16 +241,6 @@ def test_snapshot_is_not_needed_if_the_program_ends_first():
     assert capture.text == "готово"
 
 
-def test_stopped_capture_renders_to_png():
-    pytest.importorskip("PIL")
-    from PIL import Image
-
-    from termsnap.errors import FontNotFound
-    from termsnap.png import render_png
-
+def test_stopped_capture_renders_to_a_picture_that_follows_its_screen(bundled_fonts):
     capture = run(MONITOR, backend=PTY, rows=12, snapshot=Snapshot(after=0.5), timeout=30)
-    try:
-        data = render_png(capture.lines, font_size=12, scale=1)
-    except FontNotFound as error:
-        pytest.skip(f"нет моноширинного шрифта: {error.problems}")
-    assert Image.open(io.BytesIO(data)).height > 100
+    check_snapshot_picture(capture.lines, bundled_fonts)

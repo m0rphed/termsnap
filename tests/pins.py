@@ -17,4 +17,5 @@ PINNED = {
     "pytest": "9.1.1",
     "ruff": "0.17.2",
     "rich": "15.0.0",
+    "nodejs-wheel-binaries": "24.19.0",  # номер совпадает с версией самого Node.js (node --version: v24.19.0)
 }

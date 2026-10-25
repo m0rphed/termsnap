@@ -8,10 +8,9 @@ IPython берется из окружения проекта (группа ``ex
 проверяются заголовок, таблица и цвета, а не весь экран.
 """
 
-import io
 import re
 
-import pytest
+from picture import check_snapshot_picture
 
 from termsnap import Capture, Indexed, Span, Style
 
@@ -199,15 +198,5 @@ def test_man_page_text_is_the_one_in_the_file(pty_captures):
 # --- PNG ---
 
 
-def test_ipython_session_renders_to_png(pty_captures):
-    pytest.importorskip("PIL")
-    from PIL import Image
-
-    from termsnap.errors import FontNotFound
-    from termsnap.png import render_png
-
-    try:
-        data = render_png(pty_captures("ipython_session").lines, font_size=12, scale=1)
-    except FontNotFound as error:
-        pytest.skip(f"нет моноширинного шрифта: {error.problems}")
-    assert Image.open(io.BytesIO(data)).height > 100
+def test_ipython_session_renders_to_a_picture_that_follows_its_screen(pty_captures, bundled_fonts):
+    check_snapshot_picture(pty_captures("ipython_session").lines, bundled_fonts)

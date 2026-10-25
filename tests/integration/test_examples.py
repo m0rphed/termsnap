@@ -10,11 +10,10 @@ import sys
 from pathlib import Path
 
 import pytest
+from support import require_module, require_pty_extras
 
-pytest.importorskip("PIL")
-pytest.importorskip("pyte")
-if sys.platform == "win32":
-    pytest.importorskip("winpty")
+require_module("PIL")
+require_pty_extras()
 
 EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
@@ -30,7 +29,7 @@ SCRIPTS = {
 
 
 @pytest.mark.parametrize(("script", "pictures"), SCRIPTS.items(), ids=list(SCRIPTS))
-def test_example_runs_and_leaves_png_pictures(script: str, pictures: int, tmp_path: Path):
+def test_example_runs_and_leaves_png_pictures(script: str, pictures: int, tmp_path: Path, system_fonts):
     arguments = ["--out", str(tmp_path)] if script == "gallery.py" else [str(tmp_path)]
     done = subprocess.run(
         [sys.executable, "-X", "utf8", str(EXAMPLES / script), *arguments],
@@ -40,8 +39,6 @@ def test_example_runs_and_leaves_png_pictures(script: str, pictures: int, tmp_pa
         timeout=120,
         check=False,
     )
-    if "FontNotFound" in done.stderr:
-        pytest.skip("в системе нет подходящего моноширинного шрифта")
     assert done.returncode == 0, done.stderr
     files = sorted(tmp_path.glob("*.png"))
     assert len(files) == pictures, [file.name for file in files]

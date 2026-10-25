@@ -1,13 +1,12 @@
-import io
 import sys
 
 import pytest
+from picture import check_snapshot_picture
 from registry import PTY_REGISTRY, REGISTRY, Program
 from styles import styles_by_text
+from support import require_pty_extras, skip_on
 
-pytest.importorskip("pyte")
-if sys.platform == "win32":
-    pytest.importorskip("winpty")
+require_pty_extras()
 
 from termsnap import Capture, Indexed, PtyBackend, Rgb, RunTimeout, Span, Style, run
 
@@ -197,18 +196,8 @@ def test_rich_misc_keeps_emoji_with_variation_selector():
 
 
 @pytest.mark.parametrize("name", [p.name for p in PTY_REGISTRY])
-def test_pty_programs_render_to_png(name: str):
-    pytest.importorskip("PIL")
-    from PIL import Image
-
-    from termsnap.errors import FontNotFound
-    from termsnap.png import render_png
-
-    try:
-        data = render_png(captured(name).lines, font_size=12, scale=1)
-    except FontNotFound as error:
-        pytest.skip(f"нет моноширинного шрифта: {error.problems}")
-    assert Image.open(io.BytesIO(data)).width > 100
+def test_pty_programs_render_to_a_picture_that_follows_their_screen(name: str, bundled_fonts):
+    check_snapshot_picture(captured(name).lines, bundled_fonts)
 
 
 # --- видимая часть экрана и прокрутка ---
@@ -236,7 +225,7 @@ def test_visible_only_keeps_the_final_screen_of_a_stopped_program():
     assert [line.text for line in visible.lines] == [f"line {number}" for number in range(42, 51)]
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="сигналы группе процессов есть только в POSIX")
+@skip_on("win32", "сигналы группе процессов есть только в POSIX")
 def test_a_program_that_cannot_be_signalled_is_still_stopped_by_hanging_up_the_terminal(monkeypatch):
     # macOS: setuid-программе (top) нельзя послать SIGKILL, killpg отвечает EPERM
     import os

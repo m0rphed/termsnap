@@ -82,9 +82,12 @@ def test(env: dict[str, str], pytest_args: Sequence[str] = (), level: str | None
     """
     pytest без сети: окружение уже собрано шагом ``sync``, и если тесту или ``uv`` что-то понадобилось из сети (чужая
     программа через ``uvx``, обновление окружения), это ошибка, а не незаметная загрузка.
+
+    Строгий режим (``TERMSNAP_STRICT=1``, см. ``tests/support.py``): нет шрифта, Pillow или программы, которая должна
+    быть на этой системе, - тест падает, а не пропускается; пропуски разрешены только ожидаемые.
     """
     marker = ["-m", level] if level else []
-    return run(["uv", "run", "pytest", "-ra", *marker, *pytest_args], env | {"UV_OFFLINE": "1"})
+    return run(["uv", "run", "pytest", "-ra", *marker, *pytest_args], env | {"UV_OFFLINE": "1", "TERMSNAP_STRICT": "1"})
 
 
 def system_deps() -> int:

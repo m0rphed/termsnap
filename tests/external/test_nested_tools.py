@@ -7,12 +7,13 @@
 (сделаны оба вывода без трассировок, путей и ширины таблиц), поэтому их версии не фиксируются.
 """
 
-import io
 import re
 
 import pytest
+from picture import check_snapshot_picture
 from registry import REGISTRY, Program, require
 from styles import styles_by_text
+from support import require_module
 
 from termsnap import Indexed, Line, PtyBackend, Rgb, Span, Style, run
 
@@ -54,7 +55,7 @@ def test_program_output_is_clean_and_styled(program: Program, captures):
 
 @pytest.mark.parametrize("program", NESTED, ids=NESTED_IDS)
 def test_pipe_and_pty_give_the_same_text_and_styles(program: Program, captures):
-    pytest.importorskip("pyte")
+    require_module("pyte")
     require(program)
     in_pty = run(program.argv, backend=PtyBackend(), timeout=60, **program.options)
     in_pipe = captures(program.name)
@@ -371,17 +372,5 @@ def test_ruff_diagnostics_colours(captures):
 
 
 @pytest.mark.parametrize("program", NESTED, ids=NESTED_IDS)
-def test_program_renders_to_png(program: Program, captures):
-    pytest.importorskip("PIL")
-    from PIL import Image
-
-    from termsnap.errors import FontNotFound
-    from termsnap.png import render_png
-
-    try:
-        data = render_png(captures(program.name).lines, font_size=12, scale=1)
-    except FontNotFound as error:
-        pytest.skip(f"нет моноширинного шрифта: {error.problems}")
-    image = Image.open(io.BytesIO(data))
-    assert image.width > 100
-    assert image.height > 10
+def test_program_renders_to_a_picture_that_follows_its_screen(program: Program, captures, bundled_fonts):
+    check_snapshot_picture(captures(program.name).lines, bundled_fonts)

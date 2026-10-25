@@ -8,8 +8,9 @@ Pillow (8 пикселей без raqm, 7 с ним), поэтому тесты 
 
 import pytest
 from picture import picture
+from support import require_module
 
-pytest.importorskip("PIL")
+require_module("PIL")
 
 from PIL import Image
 

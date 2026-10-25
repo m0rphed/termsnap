@@ -6,8 +6,9 @@
 
 import pytest
 from picture import cell_colors
+from support import require_module
 
-pytest.importorskip("PIL")
+require_module("PIL")
 
 from termsnap import DARK, LIGHT, Indexed, Line, Rgb, Span, Style
 from termsnap.png import FontSet, render_image

@@ -1,8 +1,9 @@
 from pathlib import Path
 
 import pytest
+from support import require_module
 
-pytest.importorskip("PIL")
+require_module("PIL")
 
 from PIL import ImageFont
 
@@ -165,14 +166,6 @@ def test_resolve_skips_missing_families_and_families_without_the_needed_glyphs(m
 
 
 # - шрифты, установленные в системе -
-@pytest.fixture(scope="module")
-def system_fonts() -> FontSet:
-    try:
-        return fonts.resolve(covers="АЯабвёЖ")
-    except FontNotFound as error:
-        pytest.skip(f"в системе нет подходящего моноширинного шрифта: {error.problems}")
-
-
 def test_the_default_family_is_found_in_the_system_and_loads(system_fonts: FontSet):
     assert system_fonts.family
     font = ImageFont.truetype(

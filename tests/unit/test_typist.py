@@ -3,8 +3,9 @@
 """
 
 import pytest
+from support import require_module
 
-pytest.importorskip("pyte")
+require_module("pyte")
 
 from termsnap import Key, Keys, Pause, Request, Snapshot, Step
 from termsnap.backends.pty.typist import Typist

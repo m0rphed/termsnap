@@ -8,10 +8,9 @@ import sys
 
 import pytest
 from registry import PROGRAMS
+from support import require_pty_extras
 
-pytest.importorskip("pyte")
-if sys.platform == "win32":
-    pytest.importorskip("winpty")
+require_pty_extras()
 
 from termsnap import Capture, Key, Keys, PtyBackend, run
 

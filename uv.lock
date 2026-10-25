@@ -569,6 +569,7 @@ pty = [
 dev = [
     { name = "basedpyright" },
     { name = "ipython" },
+    { name = "nodejs-wheel-binaries" },
     { name = "pillow" },
     { name = "pyte" },
     { name = "pytest" },
@@ -579,6 +580,7 @@ dev = [
 ]
 external = [
     { name = "ipython" },
+    { name = "nodejs-wheel-binaries" },
 ]
 
 [package.metadata]
@@ -593,6 +595,7 @@ provides-extras = ["png", "pty"]
 dev = [
     { name = "basedpyright", specifier = ">=1.40.2" },
     { name = "ipython", specifier = ">=9" },
+    { name = "nodejs-wheel-binaries", specifier = ">=24" },
     { name = "pillow", specifier = ">=12" },
     { name = "pyte", specifier = ">=0.8.2" },
     { name = "pytest", specifier = ">=9.1.1" },
@@ -601,7 +604,10 @@ dev = [
     { name = "rich", specifier = ">=15.0.0" },
     { name = "ruff", specifier = ">=0.17.1" },
 ]
-external = [{ name = "ipython", specifier = ">=9" }]
+external = [
+    { name = "ipython", specifier = ">=9" },
+    { name = "nodejs-wheel-binaries", specifier = ">=24" },
+]
 
 [[package]]
 name = "traitlets"

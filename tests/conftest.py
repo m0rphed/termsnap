@@ -9,11 +9,11 @@
 каталогов - ошибка сбора, а не молчаливая "ничья": любой тест должен иметь уровень.
 """
 
-import sys
 from collections.abc import Callable
 
 import pytest
 from registry import ALL_PROGRAMS, require
+from support import EXPECTED_SKIP, STRICT, find_system_fonts, require_module, require_pty_extras
 
 from termsnap import Capture, PtyBackend, run
 
@@ -29,6 +29,30 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         if level not in LEVELS:
             raise pytest.UsageError(f"тест {item.nodeid} лежит вне каталогов уровней {LEVELS}")
         item.add_marker(getattr(pytest.mark, level))
+
+
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    """
+    Строгий режим (CI): пропущен может быть только тест программы, которой на этой системе нет по определению
+    (``Program.absent``; ``registry.require`` начинает причину с ``EXPECTED_SKIP``). Любой другой пропуск - ошибка.
+    """
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    skipped = reporter.stats.get("skipped", []) if reporter else []
+    unexpected = [report for report in skipped if not str(report.longrepr[2]).startswith(f"Skipped: {EXPECTED_SKIP}")]
+    if STRICT and unexpected:
+        print("неожиданные пропуски в строгом режиме (TERMSNAP_STRICT=1):")
+        for report in unexpected:
+            print(f"  {report.nodeid}: {report.longrepr[2]}")
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
+@pytest.fixture(scope="session")
+def system_fonts():
+    """
+    Моноширинный шрифт системы с кириллицей: нужен тестам, которые проверяют сам поиск шрифтов и полный путь от
+    команды до картинки. Остальным тестам рисования хватает ``bundled_fonts``.
+    """
+    return find_system_fonts()
 
 
 @pytest.fixture(scope="session")
@@ -53,9 +77,7 @@ def pty_captures() -> Callable[[str], Capture]:
     """
     То же, что ``captures``, но в псевдотерминале: так запускаются программы с вводом и снимками экрана.
     """
-    pytest.importorskip("pyte")
-    if sys.platform == "win32":
-        pytest.importorskip("winpty")
+    require_pty_extras()
     backend = PtyBackend()
     cache: dict[str, Capture] = {}
 
@@ -75,7 +97,7 @@ def bundled_fonts(tmp_path_factory: pytest.TempPathFactory):
     Подставной шрифт для проверок рисования: тот, что Pillow носит в себе (одинаков на любой машине), записанный в файл.
     Латиница, цифры и знаки препинания; кириллицы и эмодзи в нем нет, поэтому тексты в таких тестах - ASCII.
     """
-    pytest.importorskip("PIL")
+    require_module("PIL")
     from PIL import ImageFont
 
     from termsnap.png.fonts import Face, FontSet

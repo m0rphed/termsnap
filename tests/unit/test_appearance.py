@@ -5,15 +5,16 @@
 from pathlib import Path
 
 import pytest
+from support import require_module
 
-pytest.importorskip("PIL")
+require_module("PIL")
 
 from picture import picture
 from PIL import Image
 
 from termsnap import DARK, LIGHT, Indexed, Line, Rgb, Span, Style
 from termsnap.errors import FontNotFound
-from termsnap.png import DEFAULT_FAMILIES, Face, FontSet, fonts, from_files, render_image, render_png, resolve_spec
+from termsnap.png import DEFAULT_FAMILIES, Face, FontSet, from_files, render_image, render_png, resolve_spec
 from termsnap.png.fonts import resolution
 
 
@@ -29,14 +30,6 @@ def fontset(family: str) -> FontSet:
 
 def rgb(color: Rgb) -> tuple[int, int, int]:
     return color.red, color.green, color.blue
-
-
-@pytest.fixture(scope="module")
-def system_fonts() -> FontSet:
-    try:
-        return fonts.resolve(covers="АЯабвёЖ")
-    except FontNotFound as error:
-        pytest.skip(f"в системе нет подходящего моноширинного шрифта: {error.problems}")
 
 
 # --- выбор основного шрифта по описанию, без настоящих шрифтов ---

@@ -1,6 +1,6 @@
-import pytest
+from support import require_module
 
-pytest.importorskip("pyte")
+require_module("pyte")
 
 from termsnap import PLAIN, Indexed, Rgb, Style
 from termsnap.screen import Responder, render

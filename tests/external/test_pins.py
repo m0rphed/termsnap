@@ -3,12 +3,14 @@
 """
 
 import re
+import subprocess
 import tomllib
 from importlib import metadata
 from pathlib import Path
 
 import pytest
 from pins import PINNED
+from registry import NODE
 
 LOCK = Path(__file__).resolve().parents[2] / "uv.lock"
 
@@ -27,6 +29,11 @@ def normalized(name: str) -> str:
 def test_installed_version_is_the_one_the_expectations_were_written_for(name: str):
     found = metadata.version(name)
     assert found == PINNED[name], ADVICE.format(pinned=PINNED[name], found=f"{name} {found}")
+
+
+def test_node_is_the_pinned_version_and_not_the_one_from_the_system():
+    version = subprocess.run([NODE, "--version"], capture_output=True, text=True, check=True).stdout.strip()
+    assert version == f"v{PINNED['nodejs-wheel-binaries']}"
 
 
 def test_lock_file_holds_the_same_versions():
