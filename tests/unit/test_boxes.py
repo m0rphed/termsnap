@@ -248,6 +248,107 @@ def test_thicker_lines_grow_around_the_axis_and_keep_the_gap_of_a_double_line():
     """)
 
 
+# --- одинарная линия вместе с двойной: клетка 9 x 9, двойные линии в строках и столбцах 2 и 6, одинарная по центру ---
+#
+# Образец - начертание Consolas и Cascadia. Одинарная линия примыкает к двойным без зазора; если двойные линии идут
+# в обе стороны, одинарная упирается в ближнюю из них (T), а если в одну - доходит до дальней и замыкает угол (Г).
+
+MIXED = {
+    # вертикаль доходит до верхней линии, обе линии ответвляются вправо от вертикали
+    "╒": """
+        .........
+        .........
+        ....#####
+        ....#....
+        ....#....
+        ....#....
+        ....#####
+        ....#....
+        ....#....
+    """,
+    # вертикаль идет насквозь, линии ответвляются вправо
+    "╞": """
+        ....#....
+        ....#....
+        ....#####
+        ....#....
+        ....#....
+        ....#....
+        ....#####
+        ....#....
+        ....#....
+    """,
+    # линии идут насквозь, вертикаль примыкает снизу к нижней из них, между линиями пусто
+    "╤": """
+        .........
+        .........
+        #########
+        .........
+        .........
+        .........
+        #########
+        ....#....
+        ....#....
+    """,
+    "╪": """
+        ....#....
+        ....#....
+        #########
+        ....#....
+        ....#....
+        ....#....
+        #########
+        ....#....
+        ....#....
+    """,
+}
+
+#: Остальные символы - те же рисунки, повернутые зеркально: (образец, преобразование).
+MIXED_BY_SYMMETRY = {
+    "╕": ("╒", "left-right"),
+    "╘": ("╒", "top-bottom"),
+    "╛": ("╒", "rotate-180"),
+    "╡": ("╞", "left-right"),
+    "╧": ("╤", "top-bottom"),
+    "╓": ("╒", "transpose"),  # поменять вертикаль и горизонталь: вертикаль вниз и одинарная -> горизонталь вправо
+    "╖": ("╓", "left-right"),
+    "╙": ("╓", "top-bottom"),
+    "╜": ("╓", "rotate-180"),
+    "╟": ("╤", "transpose"),
+    "╢": ("╟", "left-right"),
+    "╥": ("╞", "transpose"),
+    "╨": ("╥", "top-bottom"),
+    "╫": ("╪", "transpose"),
+}
+
+TRANSFORMS = {
+    "left-right": Image.Transpose.FLIP_LEFT_RIGHT,
+    "top-bottom": Image.Transpose.FLIP_TOP_BOTTOM,
+    "rotate-180": Image.Transpose.ROTATE_180,
+    "transpose": Image.Transpose.TRANSPOSE,
+}
+
+
+@pytest.mark.parametrize(("char", "expected"), MIXED.items(), ids=[name(char) for char in MIXED])
+def test_a_single_line_meets_double_lines_without_a_gap(char: str, expected: str):
+    assert drawn(char, 9, 9) == art(expected)
+
+
+@pytest.mark.parametrize(("size", "light"), [(9, 1), (14, 2), (17, 3)], ids=["light-1", "light-2", "light-3"])
+@pytest.mark.parametrize(("char", "source"), MIXED_BY_SYMMETRY.items(), ids=[name(char) for char in MIXED_BY_SYMMETRY])
+def test_the_other_mixed_characters_are_mirror_images_of_the_basic_ones(char, source, size, light):
+    # размер клетки того же рода, что и толщина (нечетный при нечетной толщине): иначе линию нельзя поставить по центру
+    base, transform = source
+
+    def image(symbol: str) -> Image.Image:
+        picture_ = Image.new("RGB", (size, size), BACKGROUND)
+        assert draw_cell(ImageDraw.Draw(picture_), symbol, (0, 0, size, size), INK, BACKGROUND, light)
+        return picture_
+
+    expected = image(base).transpose(TRANSFORMS[transform])
+    assert image(char).tobytes() == expected.tobytes(), f"{char} - не {transform} от {base}"
+
+
 # --- скругленные углы: сглаживание не нарисовать буквами, поэтому проверяются стыки и симметрия ---
 
 WIDTH, HEIGHT = 11, 21

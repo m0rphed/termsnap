@@ -42,45 +42,71 @@ def draw_lines(tile: Tile, arms: Arms) -> None:
     _draw_double_horizontal(tile, arms, 1, arms.right, arms.left)
 
 
+#: Рукава: название, направление от центра (-1 - вверх или влево, 1 - вниз или вправо), вертикальный ли и название
+#: противоположного рукава.
+_ARMS = (("up", -1, True, "down"), ("down", 1, True, "up"), ("left", -1, False, "right"), ("right", 1, False, "left"))
+
+
 def _draw_plain_arms(tile: Tile, arms: Arms) -> None:
     """
-    Тонкие и толстые рукава: прямоугольник от края клетки через центр до противоположной стороны линии.
+    Тонкие и толстые рукава: прямоугольник от края клетки через центр до противоположной стороны линии. Если рукав
+    один на своей оси, а поперек идут двойные линии (``╒``, ``╓``, ``╤``, ``╟``), он продолжается до них:
+
+        двойные рукава поперек с обеих сторон -> до ближней из двух линий (``╤``: вертикаль упирается в нижнюю линию)
+        двойной рукав поперек с одной стороны -> до дальней линии (``╒``: вертикаль доходит до верхней, угол замкнут)
+        иначе                                  -> до центра
     """
     cx, cy = tile.center_x, tile.center_y
-    for name, weight in (("up", arms.up), ("down", arms.down), ("left", arms.left), ("right", arms.right)):
+    offset = double_offset(tile.light)
+    edges = {"up": tile.top, "down": tile.bottom, "left": tile.left, "right": tile.right}
+    for name, direction, vertical, opposite in _ARMS:
+        weight = getattr(arms, name)
         if weight not in {THIN, HEAVY}:
             continue
         t = tile.light if weight == THIN else heavy_width(tile.light)
-        if name == "up":
-            tile.fill(cx - t / 2, tile.top, cx + t / 2, cy + t / 2)
-        elif name == "down":
-            tile.fill(cx - t / 2, cy - t / 2, cx + t / 2, tile.bottom)
-        elif name == "left":
-            tile.fill(tile.left, cy - t / 2, cx + t / 2, cy + t / 2)
+        centre = cy if vertical else cx
+        end = centre - direction * t / 2  # за центр на полтолщины: линия перекрывает перпендикулярную
+        crossing = (arms.left, arms.right) if vertical else (arms.up, arms.down)
+        doubles = sum(other == DOUBLE for other in crossing)
+        if doubles and not getattr(arms, opposite):
+            reach = offset if doubles == 2 else -offset
+            end = centre + direction * reach - direction * tile.light / 2
+        if vertical:
+            tile.fill(cx - t / 2, edges[name], cx + t / 2, end)
         else:
-            tile.fill(cx - t / 2, cy - t / 2, tile.right, cy + t / 2)
+            tile.fill(edges[name], cy - t / 2, end, cy + t / 2)
+
+
+def _double_end(centre: float, direction: int, offset: float, beside: int, across: int, opposite: int) -> float:
+    """
+    Где у центра кончается линия двойного рукава (``direction`` - куда он идет от центра). ``beside`` - рукав поперек
+    с той же стороны от оси, что и линия, ``across`` - с другой, ``opposite`` - продолжение рукава за центром.
+
+        рядом двойной рукав            -> до его ближней линии (внутренний угол: линии смыкаются)
+        рядом тонкий или толстый рукав -> до его оси (он лежит по центру между линиями, линия к нему примыкает)
+        только с другой стороны двойной, а продолжения нет -> до дальней линии (внешний угол замкнут)
+        иначе                          -> до центра
+    """
+    if beside == DOUBLE:
+        return centre + direction * offset
+    if beside:
+        return centre
+    if across == DOUBLE and opposite != DOUBLE:
+        return centre - direction * offset
+    return centre
 
 
 def _draw_double_vertical(tile: Tile, arms: Arms, direction: int, weight: int, opposite: int) -> None:
     """
-    Двойной рукав вверх (``direction=-1``) или вниз (``1``): две вертикальные линии по сторонам от оси. У центра
-    каждая линия кончается там, где ей положено замкнуться с перпендикулярными рукавами:
-
-        рядом с линией (с ее стороны) есть боковой рукав -> идет до дальней его линии
-        боковой рукав только с другой стороны (и встречный рукав не двойной) -> до ближней
-        иначе -> до центра
+    Двойной рукав вверх (``direction=-1``) или вниз (``1``): две вертикальные линии по сторонам от оси; концы у
+    центра - см. ``_double_end``.
     """
     if weight != DOUBLE:
         return
     cx, cy, light, offset = tile.center_x, tile.center_y, tile.light, double_offset(tile.light)
     for side in (-1, 1):
         beside, across = (arms.left, arms.right) if side == -1 else (arms.right, arms.left)
-        if beside:
-            end = cy + direction * offset
-        elif across and opposite != DOUBLE:
-            end = cy - direction * offset
-        else:
-            end = cy
+        end = _double_end(cy, direction, offset, beside, across, opposite)
         edge = tile.top if direction < 0 else tile.bottom
         x = cx + side * offset
         tile.fill(x - light / 2, edge, x + light / 2, end - direction * light / 2)
@@ -95,12 +121,7 @@ def _draw_double_horizontal(tile: Tile, arms: Arms, direction: int, weight: int,
     cx, cy, light, offset = tile.center_x, tile.center_y, tile.light, double_offset(tile.light)
     for side in (-1, 1):
         beside, across = (arms.up, arms.down) if side == -1 else (arms.down, arms.up)
-        if beside:
-            end = cx + direction * offset
-        elif across and opposite != DOUBLE:
-            end = cx - direction * offset
-        else:
-            end = cx
+        end = _double_end(cx, direction, offset, beside, across, opposite)
         edge = tile.left if direction < 0 else tile.right
         y = cy + side * offset
         tile.fill(edge, y - light / 2, end - direction * light / 2, y + light / 2)
