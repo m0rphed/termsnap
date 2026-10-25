@@ -22,6 +22,21 @@ def silent() -> str:
     return ""
 
 
+class CountedScreen:
+    """
+    Текст экрана программы, который считает свои чтения. Экран разбирает эмулятор, это дорого, и ``Typist`` обязан
+    читать его не чаще, чем нужно (контракт по скорости, а не по поведению): пока вывод идет, не читать вовсе.
+    """
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.reads = 0
+
+    def __call__(self) -> str:
+        self.reads += 1
+        return self.text
+
+
 # --- строки ---
 
 
@@ -48,17 +63,16 @@ def test_next_line_waits_for_a_reply_and_then_for_silence():
     assert not t.pending
 
 
-def test_prompt_is_looked_for_on_the_last_screen_line_only_when_it_is_quiet():
-    asked = []
+def test_prompt_is_looked_for_on_the_last_screen_line():
     t = typist("a", prompt=PROMPT)
+    assert t.next(1.0, 0.1, lambda: "первая\r\n\x1b[32m>> \x1b[0m") == "a\r"
 
-    def output() -> str:
-        asked.append(1)
-        return "первая\r\n\x1b[32m>> \x1b[0m"
 
-    assert t.next(0.1, 0.0, output) is None
-    assert not asked  # экран не разбирается, пока вывод не затих
-    assert t.next(1.0, 0.1, output) == "a\r"
+def test_the_screen_is_not_read_while_the_output_is_still_coming():
+    screen = CountedScreen(">> ")
+    t = typist("a", prompt=PROMPT)
+    assert t.next(0.1, 0.0, screen) is None
+    assert screen.reads == 0
 
 
 def test_prompt_with_typed_text_is_not_a_prompt_to_wait_for():
@@ -154,18 +168,13 @@ def test_snapshot_when_looks_at_the_screen_text():
     assert t.snapshot_due(2.0, 2.0, lambda: "загрузка\r\nTasks: 42, 3 running\r\n")
 
 
-def test_snapshot_when_is_checked_only_after_new_output():
-    asked = []
-
-    def output() -> str:
-        asked.append(1)
-        return "ничего"
-
+def test_the_screen_is_read_for_the_snapshot_condition_only_after_new_output():
+    screen = CountedScreen("ничего")
     t = typist(snapshot=Snapshot(when="готово"))
-    assert not t.snapshot_due(1.0, 0.5, output)
-    assert not t.snapshot_due(1.1, 0.5, output)  # вывода не прибавилось: экран заново не разбирается
-    assert not t.snapshot_due(1.2, 1.15, output)
-    assert len(asked) == 2
+    assert not t.snapshot_due(1.0, 0.5, screen)
+    assert not t.snapshot_due(1.1, 0.5, screen)  # вывода не прибавилось: экран заново не разбирается
+    assert not t.snapshot_due(1.2, 1.15, screen)  # прибавилось: разбирается снова
+    assert screen.reads == 2
 
 
 def test_snapshot_when_then_after_counts_from_the_match():
@@ -184,37 +193,16 @@ def test_no_snapshot_means_never_due_and_nothing_to_watch_when_the_script_is_ove
     assert not t.snapshot_due(99.0, 0.0, silent)
 
 
-# --- клавиши как значения ---
-
-
-def test_named_keys_are_terminal_sequences():
-    assert (Key.ENTER.text, Key.TAB.text, Key.ESC.text) == ("\r", "\t", "\x1b")
-    assert (Key.UP.text, Key.DOWN.text) == ("\x1b[A", "\x1b[B")
-    assert Key.F[1].text == "\x1bOP"
-    assert Key.F[10].text == "\x1b[21~"
-    assert len(Key.F) == 12
-
-
-def test_ctrl_letters():
-    assert Key.ctrl("c") == Key.CTRL_C
-    assert Key.ctrl("D") == Key.CTRL_D
-    assert Key.ctrl("l") == Keys("\x0c")
-
-
-@pytest.mark.parametrize("bad", ["", "ab", "1", "ж"])
-def test_ctrl_wants_one_latin_letter(bad: str):
-    with pytest.raises(ValueError, match="латинская"):
-        Key.ctrl(bad)
-
-
-def test_snapshot_when_sees_scrolled_off_text_only_without_the_visible_only_flag():
+@pytest.mark.parametrize(
+    ("visible_only", "found"), [(False, True), (True, False)], ids=["whole history", "visible only"]
+)
+def test_snapshot_when_sees_scrolled_off_text_only_without_the_visible_only_flag(visible_only: bool, found: bool):
     output = "MARKER\r\n" + "filler\r\n" * 30  # метка ушла за верхний край экрана из 10 строк
-    for visible_only, found in ((False, True), (True, False)):
-        request = Request(
-            argv=("x",),
-            env={},
-            rows=10,
-            snapshot=Snapshot(when="MARKER"),
-            capture_visible_only=visible_only,
-        )
-        assert Typist(request, started=0.0).snapshot_due(1.0, 1.0, lambda: output) is found
+    request = Request(
+        argv=("x",),
+        env={},
+        rows=10,
+        snapshot=Snapshot(when="MARKER"),
+        capture_visible_only=visible_only,
+    )
+    assert Typist(request, started=0.0).snapshot_due(1.0, 1.0, lambda: output) is found

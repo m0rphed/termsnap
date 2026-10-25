@@ -14,6 +14,10 @@
 от которых зависит вид картинки, ``pixels`` - общая пиксельная арифметика.
 """
 
+from termsnap.extras import need
+
+need("PIL", "png", "Рисование в PNG")
+
 from termsnap.png.fonts import (
     DEFAULT_FAMILIES,
     FALLBACK_FAMILIES,

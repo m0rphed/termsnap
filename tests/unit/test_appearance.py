@@ -2,91 +2,79 @@
 Внешний вид PNG, который можно переопределить: тема, основной шрифт и поля.
 """
 
-from pathlib import Path
-
 import pytest
 from support import require_module
 
 require_module("PIL")
 
+from fakes import InstalledFonts
 from picture import picture
 from PIL import Image
 
-from termsnap import DARK, LIGHT, Indexed, Line, Rgb, Span, Style
+from termsnap import DARK, LIGHT, Indexed, Line, Span, Style
 from termsnap.errors import FontNotFound
-from termsnap.png import DEFAULT_FAMILIES, Face, FontSet, from_files, render_image, render_png, resolve_spec
-from termsnap.png.fonts import resolution
-
-
-def face(family: str) -> Face:
-    return Face(family, "Regular", Path(f"{family}.ttf"))
-
-
-def fontset(family: str) -> FontSet:
-    result = FontSet.from_faces([face(family)])
-    assert result is not None
-    return result
-
-
-def rgb(color: Rgb) -> tuple[int, int, int]:
-    return color.red, color.green, color.blue
-
+from termsnap.png import DEFAULT_FAMILIES, FontSet, from_files, render_image, render_png, resolve_spec
 
 # --- выбор основного шрифта по описанию, без настоящих шрифтов ---
 
 
 @pytest.fixture
-def fake_families(monkeypatch: pytest.MonkeyPatch) -> dict[str, FontSet]:
-    installed = {name: fontset(name) for name in ("Poor", "Rich", "Other")}
-    monkeypatch.setattr(resolution, "find_family", installed.get)
-    monkeypatch.setattr(resolution, "missing_glyphs", lambda face, chars: "Ж" if face.family == "Poor" else "")
-    return installed
+def fonts_on_machine() -> InstalledFonts:
+    return InstalledFonts(["Poor", "Rich", "Other"], lacking={"Poor": "Ж"})
 
 
-def test_a_ready_font_set_is_used_as_it_is(fake_families: dict[str, FontSet]):
-    assert resolve_spec(fake_families["Other"], covers="Ж") is fake_families["Other"]
+def resolve_on(fake: InstalledFonts, spec, covers: str = "") -> FontSet:
+    return resolve_spec(spec, covers=covers, lookup=fake.lookup, missing_of=fake.missing_of)
 
 
-def test_a_family_name_and_a_list_of_names_are_resolved_in_order(fake_families: dict[str, FontSet]):
-    assert resolve_spec("Rich").family == "Rich"
-    assert resolve_spec(["Absent", "Rich", "Other"]).family == "Rich"
-    assert resolve_spec(("Other", "Rich")).family == "Other"
+def test_a_ready_font_set_is_used_as_it_is(fonts_on_machine: InstalledFonts):
+    other = fonts_on_machine.fontsets["Other"]
+    assert resolve_on(fonts_on_machine, other, covers="Ж") is other
 
 
-def test_a_family_without_the_needed_glyphs_is_skipped_for_the_next_one(fake_families: dict[str, FontSet]):
-    assert resolve_spec(["Poor", "Rich"], covers="Ж").family == "Rich"
+def test_a_family_name_is_resolved(fonts_on_machine: InstalledFonts):
+    assert resolve_on(fonts_on_machine, "Rich").family == "Rich"
 
 
-def test_when_no_family_has_all_glyphs_the_best_installed_one_is_used(fake_families: dict[str, FontSet]):
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [(["Absent", "Rich", "Other"], "Rich"), (("Other", "Rich"), "Other")],
+    ids=["first installed", "first listed"],
+)
+def test_a_list_of_names_is_resolved_in_order(fonts_on_machine: InstalledFonts, spec, expected: str):
+    assert resolve_on(fonts_on_machine, spec).family == expected
+
+
+def test_a_family_without_the_needed_glyphs_is_skipped_for_the_next_one(fonts_on_machine: InstalledFonts):
+    assert resolve_on(fonts_on_machine, ["Poor", "Rich"], covers="Ж").family == "Rich"
+
+
+def test_when_no_family_has_all_glyphs_the_best_installed_one_is_used(fonts_on_machine: InstalledFonts):
     # эмодзи и подобное нужно рисовать запасными шрифтами, а не отказываться из-за выбранного основного
-    assert resolve_spec("Poor", covers="Ж").family == "Poor"
+    assert resolve_on(fonts_on_machine, "Poor", covers="Ж").family == "Poor"
 
 
-def test_a_family_that_is_not_installed_is_an_error_not_a_silent_default(fake_families: dict[str, FontSet]):
+def test_a_family_that_is_not_installed_is_an_error_not_a_silent_default(fonts_on_machine: InstalledFonts):
     with pytest.raises(FontNotFound) as caught:
-        resolve_spec(["Absent", "Missing"])
+        resolve_on(fonts_on_machine, ["Absent", "Missing"])
     assert caught.value.problems == ["Absent: не установлен", "Missing: не установлен"]
 
 
-def test_an_empty_list_is_rejected(fake_families: dict[str, FontSet]):
+def test_an_empty_list_is_rejected(fonts_on_machine: InstalledFonts):
     with pytest.raises(ValueError, match="пуст"):
-        resolve_spec([])
+        resolve_on(fonts_on_machine, [])
 
 
-def test_the_defaults_are_used_without_a_spec(monkeypatch: pytest.MonkeyPatch):
-    asked: list[str] = []
-    monkeypatch.setattr(resolution, "find_family", lambda family: asked.append(family))
+def test_the_default_families_are_asked_in_order_when_there_is_no_spec():
+    nothing_installed = InstalledFonts([])
     with pytest.raises(FontNotFound):
-        resolve_spec(None)
-    assert tuple(asked[: len(DEFAULT_FAMILIES)]) == DEFAULT_FAMILIES  # дальше те же семейства пробует resolve_best
+        resolve_on(nothing_installed, None)
+    assert tuple(nothing_installed.asked[: len(DEFAULT_FAMILIES)]) == DEFAULT_FAMILIES
 
 
-def test_user_families_can_be_followed_by_the_defaults(
-    fake_families: dict[str, FontSet], monkeypatch: pytest.MonkeyPatch
-):
-    installed = {**fake_families, DEFAULT_FAMILIES[0]: fontset(DEFAULT_FAMILIES[0])}
-    monkeypatch.setattr(resolution, "find_family", installed.get)
-    assert resolve_spec(["Absent", *DEFAULT_FAMILIES]).family == DEFAULT_FAMILIES[0]
+def test_user_families_can_be_followed_by_the_defaults():
+    fake = InstalledFonts([DEFAULT_FAMILIES[0]])
+    assert resolve_on(fake, ["Absent", *DEFAULT_FAMILIES]).family == DEFAULT_FAMILIES[0]
 
 
 # --- тема в рисовании ---
@@ -111,7 +99,7 @@ def test_theme_can_be_given_by_name_or_as_a_mapping(bundled_fonts: FontSet):
     assert by_name.tobytes() == by_object.tobytes()
     by_mapping = render_image(lines, theme={"base": "light", "background": "#fafafa"}, fonts=bundled_fonts, scale=1)
     assert by_mapping.getpixel((0, 0)) == (0xFA, 0xFA, 0xFA)
-    assert by_mapping.getpixel((by_mapping.width // 2, by_mapping.height // 2)) == rgb(LIGHT.ansi[2])
+    assert by_mapping.getpixel((by_mapping.width // 2, by_mapping.height // 2)) == LIGHT.ansi[2].channels
 
 
 def test_unknown_theme_name_is_reported_before_drawing(bundled_fonts: FontSet):

@@ -1,5 +1,5 @@
 # Тонкая обертка: вся логика проверок живет в ci/run.py, чтобы проект не зависел от одного сервиса CI.
-# То же самое без GitHub: `python ci/run.py all` или `python ci/run.py docker` (см. README, раздел «Проверки и CI»).
+# То же самое без GitHub: `python ci/run.py all` или `python ci/run.py docker` (см. README, раздел "Проверки и CI").
 name: CI
 
 on:
@@ -32,7 +32,13 @@ jobs:
           python-version: ${{ matrix.python }}
           enable-cache: ${{ !env.ACT }} # в act хранилища кэша нет
       - run: uv run --no-project python ci/run.py system-deps
-      - run: uv run --no-project python ci/run.py all
+      - run: uv run --no-project python ci/run.py all --coverage
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() && !env.ACT }} # в act хранилища артефактов нет
+        with:
+          name: coverage-linux-${{ matrix.python }}
+          path: coverage/data-*
+          include-hidden-files: true
 
   # Windows и macOS: только после слияния и по кнопке, чтобы не тратить минуты на каждый pull request.
   # Локально эти системы не запустить (act умеет только Linux-контейнеры).
@@ -51,4 +57,30 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           enable-cache: true
-      - run: uv run --no-project python ci/run.py all
+      - run: uv run --no-project python ci/run.py all --coverage
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: coverage-${{ matrix.os }}-${{ matrix.python }}
+          path: coverage/data-*
+          include-hidden-files: true
+
+  # Покрытие всех систем вместе: в Windows не выполняется posix.py, в Linux и macOS - conpty.py, поэтому по одной
+  # системе картина неполная. Задача только печатает объединенный отчет (порога нет) и ничего не проверяет.
+  coverage:
+    needs: [linux, desktop]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: "3.14"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: coverage-*
+          path: coverage
+          merge-multiple: true
+      - run: uv sync --locked
+      - run: uv run --no-project python ci/run.py coverage

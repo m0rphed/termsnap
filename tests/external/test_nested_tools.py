@@ -10,27 +10,16 @@
 import re
 
 import pytest
+from helpers import texts
 from picture import check_snapshot_picture
 from registry import REGISTRY, Program, require
-from styles import styles_by_text
+from styles import control_characters, styled, styles_by_text
 from support import require_module
 
-from termsnap import Indexed, Line, PtyBackend, Rgb, Span, Style, run
+from termsnap import Indexed, PtyBackend, Rgb, Span, Style, run
 
 NESTED = [program for program in REGISTRY if program.external]
 NESTED_IDS = [program.name for program in NESTED]
-
-
-def styled(lines: tuple[Line, ...]) -> bool:
-    return any(
-        span.style.fg is not None or span.style.bg is not None or span.style.bold or span.style.italic
-        for line in lines
-        for span in line.spans
-    )
-
-
-def texts(lines: tuple[Line, ...]) -> list[str]:
-    return [line.text for line in lines]
 
 
 def calm(text: str) -> str:
@@ -43,14 +32,25 @@ def calm(text: str) -> str:
 
 
 @pytest.mark.parametrize("program", NESTED, ids=NESTED_IDS)
-def test_program_output_is_clean_and_styled(program: Program, captures):
+def test_program_prints_something(program: Program, captures):
+    assert captures(program.name).lines
+
+
+@pytest.mark.parametrize("program", NESTED, ids=NESTED_IDS)
+def test_program_exit_code_is_the_expected_one(program: Program, captures):
     capture = captures(program.name)
     assert (capture.returncode != 0) is program.expect_failure, capture.text
-    assert capture.lines
-    assert "\x1b" not in capture.text  # ни одна управляющая последовательность не просочилась в текст
-    assert not any(char in capture.text for char in "\r\x07\x00")
-    if program.colored:
-        assert styled(capture.lines)
+
+
+@pytest.mark.parametrize("program", NESTED, ids=NESTED_IDS)
+def test_program_text_has_no_control_characters(program: Program, captures):
+    # ни одна управляющая последовательность не просочилась в текст
+    assert control_characters(captures(program.name).text) == []
+
+
+@pytest.mark.parametrize("program", [item for item in NESTED if item.colored], ids=lambda item: item.name)
+def test_program_output_has_colours_or_attributes(program: Program, captures):
+    assert styled(captures(program.name).lines)
 
 
 @pytest.mark.parametrize("program", NESTED, ids=NESTED_IDS)
@@ -76,7 +76,7 @@ NODE_ANSI = [
 
 def test_node_progress_is_overwritten_and_title_sequences_are_dropped(captures):
     capture = captures("node_ansi")
-    assert texts(capture.lines) == NODE_ANSI
+    assert texts(capture) == NODE_ANSI
 
 
 def test_node_backgrounds_keep_each_of_their_forty_eight_colours(captures):
@@ -156,7 +156,7 @@ NODE_INSPECT_STYLES = {
 
 
 def test_node_inspect_prints_every_kind_of_value(captures):
-    assert texts(captures("node_inspect").lines) == NODE_INSPECT
+    assert texts(captures("node_inspect")) == NODE_INSPECT
 
 
 def test_node_inspect_colours_each_kind_of_value_differently(captures):
@@ -179,7 +179,7 @@ PLAIN = Style()
 
 
 def test_git_log_graph_has_the_merge_the_branch_and_the_tag(captures):
-    assert texts(captures("git_log").lines) == GIT_LOG
+    assert texts(captures("git_log")) == GIT_LOG
 
 
 def test_git_log_colours_hashes_names_and_graph_lines(captures):
@@ -349,7 +349,7 @@ Found 5 errors.
 
 
 def test_ruff_diagnostics_report(captures):
-    assert texts(captures("ruff_diagnostics").lines) == RUFF_DIAGNOSTICS
+    assert texts(captures("ruff_diagnostics")) == RUFF_DIAGNOSTICS
 
 
 def test_ruff_diagnostics_colours(captures):

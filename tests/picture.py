@@ -60,12 +60,16 @@ def cell_colors(image: Image.Image, columns: int, row: int = 0, rows: int = 1) -
 def check_snapshot_picture(lines: Sequence[Line], fonts: FontSet) -> None:
     """
     PNG снимка экрана: размер получается из размера снимка (столбцы x ширина клетки, строки x высота строки), а на
-    картинке есть и фон, и нарисованное. Размеры клетки берутся из картинки одной буквы, поэтому числа не зависят от
-    шрифта.
+    картинке есть и фон, и нарисованное. Размеры клетки берутся из картинок, нарисованных тем же шрифтом, поэтому числа
+    не зависят от шрифта. Ширина клетки может быть дробной (движок раскладки raqm), а ширина картинки округляется до
+    пикселя, поэтому ширина сверяется с точностью до одного пикселя.
     """
     options = {"fonts": fonts, "scale": 1, "padding": 0, "font_size": 12}
     image = Image.open(io.BytesIO(render_png(lines, **options)))
-    cell = render_image([Line((Span("M"),))], **options)
+    many = 1000  # много клеток подряд: дробная ширина клетки получается с точностью до тысячной доли пикселя
+    cell_width = render_image([Line((Span("M" * many),))], **options).width / many
+    row_height = render_image([Line((Span("M"),))], **options).height
     columns = max((line.width for line in lines), default=1)
-    assert image.size == (cell.width * columns, cell.height * len(lines))
+    assert abs(image.width - columns * cell_width) <= 1
+    assert image.height == row_height * len(lines)
     assert len(image.convert("RGB").getcolors(maxcolors=image.width * image.height) or []) >= 2

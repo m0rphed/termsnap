@@ -3,28 +3,29 @@ import sys
 from pathlib import Path
 
 import pytest
+from helpers import python
 
-from termsnap import Indexed, PipeBackend, RunTimeout, Style, run, terminal_environment
-
-
-def python(code: str) -> list[str]:
-    return [sys.executable, "-c", code]
+from termsnap import Indexed, PipeBackend, RunTimeout, Style, run
 
 
-def test_run_captures_output_and_exit_code():
-    capture = run(python("print('hello'); print('world')"))
-    assert capture.ok
-    assert capture.returncode == 0
-    assert capture.text == "hello\nworld"
+def test_run_captures_the_output():
+    assert run(python("print('hello'); print('world')")).text == "hello\nworld"
+
+
+def test_successful_command_is_ok_and_has_exit_code_zero():
+    capture = run(python("pass"))
+    assert (capture.ok, capture.returncode) == (True, 0)
+
+
+def test_capture_remembers_the_command_and_how_long_it_took():
+    capture = run(python("pass"))
     assert capture.argv[0] == sys.executable
     assert capture.duration >= 0
 
 
 def test_failing_command_is_reported_not_raised():
     capture = run(python("import sys; print('boom'); sys.exit(3)"))
-    assert not capture.ok
-    assert capture.returncode == 3
-    assert capture.text == "boom"
+    assert (capture.ok, capture.returncode, capture.text) == (False, 3, "boom")
 
 
 def test_stderr_is_merged_with_stdout_in_order():
@@ -96,14 +97,6 @@ def test_missing_program_raises_file_not_found():
 def test_empty_command_is_rejected():
     with pytest.raises(ValueError, match="пуста"):
         run([])
-
-
-def test_terminal_environment_overrides_color_variables_of_the_base():
-    base = {"NO_COLOR": "1", "FORCE_COLOR": "0", "KEEP": "yes"}
-    env = terminal_environment(base, color=True, columns=100, rows=30)
-    assert "NO_COLOR" not in env
-    assert env["FORCE_COLOR"] == "1"
-    assert env["KEEP"] == "yes"
 
 
 def test_a_custom_backend_can_be_used():

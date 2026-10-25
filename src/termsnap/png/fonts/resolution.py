@@ -2,10 +2,11 @@
 Выбор основного шрифта из списка кандидатов и запасных шрифтов для недостающих символов.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from functools import cache
 
 from termsnap.errors import FontNotFound
+from termsnap.png.fonts.face import Face
 from termsnap.png.fonts.families import DEFAULT_FAMILIES, FALLBACK_FAMILIES
 from termsnap.png.fonts.fontset import FontSet
 from termsnap.png.fonts.glyphs import missing_glyphs
@@ -15,19 +16,31 @@ from termsnap.png.fonts.search import find_family
 #: семейств в порядке предпочтения.
 type FontSpec = FontSet | str | Sequence[str]
 
+#: Откуда берутся сведения о шрифтах: по имени семейства - его начертания (``None``, если не установлено) и по
+#: начертанию и тексту - символы, которых в нем нет. По умолчанию это поиск среди шрифтов системы и чтение файла
+#: шрифта; другие функции подставляют тесты, чтобы не зависеть от установленных шрифтов.
+type FamilyLookup = Callable[[str], FontSet | None]
+type GlyphCheck = Callable[[Face, str], str]
 
-def resolve(families: Sequence[str] = DEFAULT_FAMILIES, *, covers: str = "") -> FontSet:
+
+def resolve(
+    families: Sequence[str] = DEFAULT_FAMILIES,
+    *,
+    covers: str = "",
+    lookup: FamilyLookup = find_family,
+    missing_of: GlyphCheck = missing_glyphs,
+) -> FontSet:
     """
     Первое из семейств, которое установлено и содержит все символы ``covers``; иначе ``FontNotFound`` с причиной
     отказа по каждому семейству.
     """
     problems = []
     for family in families:
-        fontset = find_family(family)
+        fontset = lookup(family)
         if fontset is None:
             problems.append(f"{family}: не установлен")
             continue
-        missing = missing_glyphs(fontset.regular, covers)
+        missing = missing_of(fontset.regular, covers)
         if missing:
             problems.append(f"{family}: нет символов {missing!r}")
             continue
@@ -35,7 +48,13 @@ def resolve(families: Sequence[str] = DEFAULT_FAMILIES, *, covers: str = "") -> 
     raise FontNotFound(problems)
 
 
-def resolve_best(families: Sequence[str] = DEFAULT_FAMILIES, *, covers: str = "") -> FontSet:
+def resolve_best(
+    families: Sequence[str] = DEFAULT_FAMILIES,
+    *,
+    covers: str = "",
+    lookup: FamilyLookup = find_family,
+    missing_of: GlyphCheck = missing_glyphs,
+) -> FontSet:
     """
     Установленное семейство, в котором есть больше всего символов ``covers`` (при равенстве - более раннее в списке).
     Нужно, когда ни одно семейство не содержит все символы, а недостающие рисуются запасными шрифтами.
@@ -43,11 +62,11 @@ def resolve_best(families: Sequence[str] = DEFAULT_FAMILIES, *, covers: str = ""
     best: tuple[int, FontSet] | None = None  # (сколько символов не хватает, набор)
     problems = []
     for family in families:
-        fontset = find_family(family)
+        fontset = lookup(family)
         if fontset is None:
             problems.append(f"{family}: не установлен")
             continue
-        missing = len(missing_glyphs(fontset.regular, covers))
+        missing = len(missing_of(fontset.regular, covers))
         if best is None or missing < best[0]:
             best = (missing, fontset)
     if best is None:
@@ -55,7 +74,13 @@ def resolve_best(families: Sequence[str] = DEFAULT_FAMILIES, *, covers: str = ""
     return best[1]
 
 
-def resolve_spec(spec: FontSpec | None, *, covers: str = "") -> FontSet:
+def resolve_spec(
+    spec: FontSpec | None,
+    *,
+    covers: str = "",
+    lookup: FamilyLookup = find_family,
+    missing_of: GlyphCheck = missing_glyphs,
+) -> FontSet:
     """
     Основной шрифт по любому способу его задать (``FontSpec``); ``None`` - ``DEFAULT_FAMILIES``.
 
@@ -72,9 +97,9 @@ def resolve_spec(spec: FontSpec | None, *, covers: str = "") -> FontSet:
     if not families:
         raise ValueError("список семейств шрифта пуст")
     try:
-        return resolve(families, covers=covers)
+        return resolve(families, covers=covers, lookup=lookup, missing_of=missing_of)
     except FontNotFound:
-        return resolve_best(families, covers=covers)
+        return resolve_best(families, covers=covers, lookup=lookup, missing_of=missing_of)
 
 
 @cache

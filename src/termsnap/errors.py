@@ -21,6 +21,19 @@ class RunTimeout(TermsnapError):
         self.output = output
 
 
+class MissingExtra(TermsnapError, ImportError):
+    """
+    Не установлена необязательная зависимость, нужная для запрошенного действия: ``extra`` - название набора
+    (``pip install termsnap[extra]``), ``module`` - что не импортируется. Это и ``ImportError``, поэтому ее можно
+    ловить как обычную нехватку модуля.
+    """
+
+    def __init__(self, module: str, extra: str, purpose: str) -> None:
+        super().__init__(f"{purpose}: не установлен модуль {module}. Поставьте набор: pip install termsnap[{extra}]")
+        self.module = module
+        self.extra = extra
+
+
 class FontNotFound(TermsnapError):
     """
     Не нашлось шрифта, пригодного для рисования: ни одно из запрошенных семейств не установлено или не содержит

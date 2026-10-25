@@ -7,34 +7,36 @@
 """
 
 import pytest
+from helpers import VS16, texts
 from picture import check_snapshot_picture
 from registry import REGISTRY, Program
-from styles import rstripped, styles_by_text
+from styles import control_characters, rstripped, styled, styles_by_text
 
-from termsnap import Indexed, Line, Rgb, Style
-
-VS16 = "\N{VARIATION SELECTOR-16}"  # селектор эмодзи: символ перед ним рисуется как цветной эмодзи в две клетки
+from termsnap import Indexed, Rgb, Style
 
 PROJECT = [program for program in REGISTRY if not program.external]
 
 
-def styled(lines: tuple[Line, ...]) -> bool:
-    return any(
-        span.style.fg is not None or span.style.bg is not None or span.style.bold or span.style.italic
-        for line in lines
-        for span in line.spans
-    )
+@pytest.mark.parametrize("program", PROJECT, ids=lambda program: program.name)
+def test_program_prints_something(program: Program, captures):
+    assert captures(program.name).lines
 
 
 @pytest.mark.parametrize("program", PROJECT, ids=lambda program: program.name)
-def test_program_output_is_clean_and_styled(program: Program, captures):
+def test_program_exit_code_is_the_expected_one(program: Program, captures):
     capture = captures(program.name)
     assert (capture.returncode != 0) is program.expect_failure, capture.text
-    assert capture.lines
-    assert "\x1b" not in capture.text  # ни одна управляющая последовательность не просочилась в текст
-    assert not any(char in capture.text for char in "\r\x07\x00")
-    if program.colored:
-        assert styled(capture.lines)
+
+
+@pytest.mark.parametrize("program", PROJECT, ids=lambda program: program.name)
+def test_program_text_has_no_control_characters(program: Program, captures):
+    # ни одна управляющая последовательность не просочилась в текст
+    assert control_characters(captures(program.name).text) == []
+
+
+@pytest.mark.parametrize("program", [item for item in PROJECT if item.colored], ids=lambda item: item.name)
+def test_program_output_has_colours_or_attributes(program: Program, captures):
+    assert styled(captures(program.name).lines)
 
 
 # --- rich_table: таблица с эмодзи, цветами столбцов и подписями ---
@@ -72,10 +74,12 @@ RICH_TABLE_STYLES = {
 }
 
 
-def test_rich_table_is_drawn_exactly_and_its_frame_is_a_rectangle_even_with_emoji(captures):
-    capture = captures("rich_table")
-    assert [line.text for line in capture.lines] == RICH_TABLE
-    assert {line.width for line in capture.lines[1:12]} == {45}  # все строки рамки одной ширины в клетках
+def test_rich_table_is_drawn_exactly(captures):
+    assert texts(captures("rich_table")) == RICH_TABLE
+
+
+def test_rich_table_frame_is_a_rectangle_even_with_emoji(captures):
+    assert {line.width for line in captures("rich_table").lines[1:12]} == {45}  # одна ширина в клетках
 
 
 def test_rich_table_cells_have_the_styles_of_their_columns(captures):
@@ -103,40 +107,53 @@ RICH_PANEL_TREE = [
 ]
 
 
-def test_rich_panel_and_tree_are_drawn_exactly_with_straight_borders(captures):
-    capture = captures("rich_panel_tree")
-    assert [line.text for line in capture.lines] == RICH_PANEL_TREE
-    assert {line.width for line in capture.lines[:12]} == {60}  # большая панель: ширина задана программой
-    assert {line.width for line in capture.lines[12:]} == {34}  # малая подгоняется под текст
+def test_rich_panel_and_tree_are_drawn_exactly(captures):
+    assert texts(captures("rich_panel_tree")) == RICH_PANEL_TREE
+
+
+def test_rich_panels_have_straight_borders_of_their_own_widths(captures):
+    lines = captures("rich_panel_tree").lines
+    assert {line.width for line in lines[:12]} == {60}  # большая панель: ширина задана программой
+    assert {line.width for line in lines[12:]} == {34}  # малая подгоняется под текст
 
 
 def test_rich_panel_tree_has_coloured_names_and_a_warning_on_red(captures):
-    styles = styles_by_text(captures("rich_panel_tree"))
-    assert styles["Структура"] == Style(fg=Indexed(12), bold=True)
-    assert styles["проект"] == Style(fg=Indexed(4), bold=True)
-    assert styles["main.py"] == Style(fg=Indexed(2))
-    assert styles["README.md"] == Style(dim=True)
-    assert styles["ВНИМАНИЕ"] == Style(fg=Indexed(7), bg=Indexed(1), bold=True)
+    assert (
+        styles_by_text(captures("rich_panel_tree")).items()
+        >= {
+            "Структура": Style(fg=Indexed(12), bold=True),
+            "проект": Style(fg=Indexed(4), bold=True),
+            "main.py": Style(fg=Indexed(2)),
+            "README.md": Style(dim=True),
+            "ВНИМАНИЕ": Style(fg=Indexed(7), bg=Indexed(1), bold=True),
+        }.items()
+    )
 
 
 # --- rich_progress и rich_live: перерисовка на месте оставляет только последний кадр ---
 
 
 def test_rich_progress_shows_only_the_final_state_not_every_frame(captures):
-    capture = captures("rich_progress")
-    assert [line.text for line in capture.lines] == [
+    assert texts(captures("rich_progress")) == [
         "Скачивание ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 40/40",
         "Обработка  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 40/40",
         "Готово",
     ]
-    styles = styles_by_text(capture)
-    assert styles["Скачивание"] == Style(fg=Indexed(4), bold=True)
-    assert styles["100%"] == Style(fg=Indexed(5))
-    assert styles["40/40"] == Style(fg=Indexed(2))
+
+
+def test_rich_progress_columns_have_their_colours(captures):
+    assert (
+        styles_by_text(captures("rich_progress")).items()
+        >= {
+            "Скачивание": Style(fg=Indexed(4), bold=True),
+            "100%": Style(fg=Indexed(5)),
+            "40/40": Style(fg=Indexed(2)),
+        }.items()
+    )
 
 
 def test_rich_live_shows_one_table_not_every_frame(captures):
-    assert [line.text for line in captures("rich_live").lines] == [
+    assert texts(captures("rich_live")) == [
         "        Шаг 5        ",
         "┏━━━━━━━━┳━━━━━━━━━━┓",
         "┃ Узел   ┃ Нагрузка ┃",
@@ -172,13 +189,22 @@ RICH_SYNTAX = [
 ]
 
 
-def test_rich_syntax_is_numbered_highlighted_and_on_a_background(captures):
-    capture = captures("rich_syntax")
-    assert rstripped(capture) == RICH_SYNTAX
-    styles = styles_by_text(capture)
-    assert styles["def"] == Style(fg=Indexed(81), bg=Indexed(235))  # ключевое слово на фоне темы monokai
-    assert styles["return"] == Style(fg=Indexed(81), bg=Indexed(235))
-    assert {span.style.bg for span in capture.lines[15].spans} == {Indexed(255)}  # второй блок на светлом фоне
+def test_rich_syntax_is_drawn_with_numbers(captures):
+    assert rstripped(captures("rich_syntax")) == RICH_SYNTAX
+
+
+def test_rich_syntax_highlights_keywords_on_the_background_of_the_theme(captures):
+    assert (
+        styles_by_text(captures("rich_syntax")).items()
+        >= {  # ключевые слова на фоне темы monokai
+            "def": Style(fg=Indexed(81), bg=Indexed(235)),
+            "return": Style(fg=Indexed(81), bg=Indexed(235)),
+        }.items()
+    )
+
+
+def test_rich_syntax_second_block_is_on_a_light_background(captures):
+    assert {span.style.bg for span in captures("rich_syntax").lines[15].spans} == {Indexed(255)}
 
 
 # --- rich_markdown ---
@@ -210,14 +236,21 @@ RICH_MARKDOWN = [
 
 
 def test_rich_markdown_has_headings_lists_quote_code_and_a_rule(captures):
-    capture = captures("rich_markdown")
-    assert rstripped(capture) == RICH_MARKDOWN
-    styles = styles_by_text(capture)
-    assert styles["Заголовок первого уровня"] == Style(bold=True, underline=True)
-    assert styles["жирным"] == Style(bold=True)
-    assert styles["курсивом"] == Style(italic=True)
-    assert styles["кодом"] == Style(fg=Indexed(6), bg=Indexed(0), bold=True)
-    assert styles["ссылкой"] == Style(fg=Indexed(4), underline=True)
+    assert rstripped(captures("rich_markdown")) == RICH_MARKDOWN
+
+
+def test_rich_markdown_inline_styles_and_code_block(captures):
+    styles = styles_by_text(captures("rich_markdown"))
+    assert (
+        styles.items()
+        >= {
+            "Заголовок первого уровня": Style(bold=True, underline=True),
+            "жирным": Style(bold=True),
+            "курсивом": Style(italic=True),
+            "кодом": Style(fg=Indexed(6), bg=Indexed(0), bold=True),
+            "ссылкой": Style(fg=Indexed(4), underline=True),
+        }.items()
+    )
     assert styles["def"].bg == Indexed(235)  # блок кода на своем фоне
 
 
@@ -242,25 +275,28 @@ def test_rich_gradient_keeps_each_of_its_sixty_truecolor_steps(captures):
     gradient = captures("rich_misc").lines[1]
     colours = [span.style.fg for span in gradient.spans]
     assert len(colours) == 60
-    assert colours[0] == Rgb(255, 0, 128)  # шаг 0: красный максимален, зеленый минимален
-    assert colours[1] == Rgb(251, 4, 128)
-    assert colours[-1] == Rgb(19, 236, 128)  # шаг 59: 255 - 59 * 4 и 59 * 4
+    # шаг 0: красный максимален, зеленый минимален; шаг 59: 255 - 59 * 4 и 59 * 4
+    assert (colours[0], colours[1], colours[-1]) == (Rgb(255, 0, 128), Rgb(251, 4, 128), Rgb(19, 236, 128))
 
 
 def test_rich_misc_attributes_are_each_on_their_own_word(captures):
-    styles = styles_by_text(captures("rich_misc"))
-    assert styles["жирный"] == Style(bold=True)
-    assert styles["курсив"] == Style(italic=True)
-    assert styles["подчёркнутый"] == Style(underline=True)
-    assert styles["зачёркнутый"] == Style(strike=True)
-    assert styles["тусклый"] == Style(dim=True)
-    assert styles["обратный"] == Style(inverse=True)
-    assert styles["фон"] == Style(bg=Indexed(4))
+    assert (
+        styles_by_text(captures("rich_misc")).items()
+        >= {
+            "жирный": Style(bold=True),
+            "курсив": Style(italic=True),
+            "подчёркнутый": Style(underline=True),
+            "зачёркнутый": Style(strike=True),
+            "тусклый": Style(dim=True),
+            "обратный": Style(inverse=True),
+            "фон": Style(bg=Indexed(4)),
+        }.items()
+    )
 
 
 def test_rich_traceback_shows_the_error_and_the_failing_line(captures):
     # пути к файлам зависят от машины, поэтому строка с ошибкой и код проверяются по тексту
-    lines = [line.text.rstrip() for line in captures("rich_traceback").lines]
+    lines = rstripped(captures("rich_traceback"))
     assert "ZeroDivisionError: division by zero" in lines
     assert any("❱  5 │   return a / b" in line for line in lines)  # стрелка указывает на строку, где упало
 

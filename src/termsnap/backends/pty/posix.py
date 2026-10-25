@@ -12,6 +12,7 @@ import struct
 import subprocess
 import termios
 import time
+from collections.abc import Callable
 
 from termsnap.backends.pty.typist import Typist
 from termsnap.errors import RunTimeout
@@ -26,10 +27,21 @@ POLL_INTERVAL = 0.02
 READ_SIZE = 65536
 
 
-def run(executable: str, request: Request) -> tuple[bytes, int, bool]:
+def stop_group(pid: int, kill: Callable[[int, int], None] = os.killpg) -> None:
+    """
+    Убивает группу процессов ``pid``. Группы уже нет (``ProcessLookupError``) или посылать сигнал нельзя
+    (``PermissionError``: macOS, setuid-программы вроде ``top``) - не ошибка: закрытый конец терминала уже заставил
+    ядро послать сеансу SIGHUP, этого хватает. ``kill`` подставляют тесты.
+    """
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        kill(pid, signal.SIGKILL)
+
+
+def run(executable: str, request: Request, stop: Callable[[int], None] = stop_group) -> tuple[bytes, int, bool]:
     """
     Запускает команду с терминалом нужного размера в отдельной сессии и возвращает весь вывод, код возврата и признак
-    того, что программу остановили по ``Request.snapshot``.
+    того, что программу остановили по ``Request.snapshot``. ``stop`` останавливает группу процессов по таймауту или
+    снимку (тесты подставляют свою).
     """
     master, slave = pty.openpty()
     try:
@@ -94,10 +106,7 @@ def run(executable: str, request: Request) -> tuple[bytes, int, bool]:
     finally:
         os.close(master)
         if timed_out or stopped:
-            # macOS: setuid-программам (top) обычный пользователь сигналы слать не может (EPERM), но закрытый
-            # master уже заставил ядро послать сеансу SIGHUP, этого хватает
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(process.pid, signal.SIGKILL)
+            stop(process.pid)
         code = process.wait()
     output = b"".join(chunks)
     if timed_out:

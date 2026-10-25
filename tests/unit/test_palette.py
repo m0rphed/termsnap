@@ -1,10 +1,10 @@
 """
-Палитра терминала и запись цвета: расчет цветов 16-255 по правилам xterm, шестнадцатеричные цвета, имена базовых цветов.
+Палитра терминала и запись цвета: расчет цветов 16-255 по правилам xterm, имена базовых цветов, цвет в любой записи.
 """
 
 import pytest
 
-from termsnap import ANSI_NAMES, DARK, Indexed, Rgb
+from termsnap import ANSI_NAMES, Rgb, parse_color
 from termsnap.theme.palette import ansi_index, extended_color
 
 
@@ -18,6 +18,7 @@ from termsnap.theme.palette import ansi_index, extended_color
         (46, (0, 255, 0)),
         (52, (95, 0, 0)),
         (196, (255, 0, 0)),
+        (202, (255, 95, 0)),
         (208, (255, 135, 0)),  # оранжевый
         (231, (255, 255, 255)),  # конец куба: белый
         (232, (8, 8, 8)),  # начало серых ступеней
@@ -29,30 +30,31 @@ def test_extended_palette_follows_xterm(index: int, expected: tuple[int, int, in
     assert extended_color(index).channels == expected
 
 
-def test_theme_takes_basic_colors_from_itself_and_the_rest_from_xterm():
-    assert DARK.resolve(Indexed(1)) == DARK.ansi[1]
-    assert DARK.resolve(Indexed(15)) == DARK.ansi[15]
-    assert DARK.resolve(Indexed(16)) == extended_color(16)
-    assert DARK.resolve(Rgb(1, 2, 3)) == Rgb(1, 2, 3)
+# --- имена базовых цветов ---
 
 
-def test_hex_colors_are_read_with_or_without_the_hash():
-    assert Rgb.from_hex("cd3131") == Rgb(0xCD, 0x31, 0x31)
-    assert Rgb.from_hex("#CD3131") == Rgb(0xCD, 0x31, 0x31)
-    assert Rgb(0xCD, 0x31, 0x31).hex == "#cd3131"
-    assert Rgb(1, 2, 3).channels == (1, 2, 3)
+def test_names_are_the_sixteen_basic_colors_in_palette_order():
+    assert (
+        *("black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"),
+        *("bright_black", "bright_red", "bright_green", "bright_yellow"),
+        *("bright_blue", "bright_magenta", "bright_cyan", "bright_white"),
+    ) == ANSI_NAMES
 
 
-@pytest.mark.parametrize("bad", ["", "fff", "12345", "1234567", "gggggg"])
-def test_bad_hex_colors_are_rejected(bad: str):
-    with pytest.raises(ValueError):
-        Rgb.from_hex(bad)
-
-
-def test_basic_colors_are_found_by_number_and_by_any_spelling_of_the_name():
+def test_basic_color_is_found_by_its_number():
     assert ansi_index(3) == 3
+
+
+def test_basic_color_is_found_by_name():
     assert ansi_index("red") == 1
-    assert ansi_index("Bright Red") == ansi_index("bright-red") == ansi_index("bright_red") == 9
+
+
+@pytest.mark.parametrize("spelling", ["Bright Red", "bright-red", "bright_red", " BRIGHT_RED "])
+def test_any_spelling_of_a_name_finds_the_same_color(spelling: str):
+    assert ansi_index(spelling) == 9
+
+
+def test_every_name_finds_its_own_number():
     assert [ansi_index(name) for name in ANSI_NAMES] == list(range(16))
 
 
@@ -60,3 +62,38 @@ def test_basic_colors_are_found_by_number_and_by_any_spelling_of_the_name():
 def test_unknown_basic_colors_are_rejected(bad: int | str):
     with pytest.raises(ValueError):
         ansi_index(bad)
+
+
+# --- цвет в любой записи ---
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("#ff2e97", Rgb(255, 46, 151)),
+        ("FF2E97", Rgb(255, 46, 151)),
+        ("  #f00 ", Rgb(255, 0, 0)),
+        ("abc", Rgb(0xAA, 0xBB, 0xCC)),
+        ((1, 2, 3), Rgb(1, 2, 3)),
+        (Rgb(9, 8, 7), Rgb(9, 8, 7)),
+    ],
+    ids=["hash", "no hash, capitals", "short, spaces", "short, no hash", "tuple", "Rgb"],
+)
+def test_colors_can_be_written_in_several_ways(value, expected: Rgb):
+    assert parse_color(value) == expected
+
+
+@pytest.mark.parametrize("bad", ["", "#12", "#12345", "#gggggg", "red"])
+def test_bad_color_strings_are_rejected(bad: str):
+    with pytest.raises(ValueError, match="#rrggbb"):
+        parse_color(bad)
+
+
+def test_color_of_a_wrong_kind_is_rejected():
+    with pytest.raises(TypeError):
+        parse_color(15)  # pyright: ignore[reportArgumentType]
+
+
+def test_color_channel_out_of_range_is_rejected():
+    with pytest.raises(ValueError, match="от 0 до 255"):
+        parse_color((0, 0, 300))

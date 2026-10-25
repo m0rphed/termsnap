@@ -10,13 +10,13 @@ import sys
 from pathlib import Path
 
 import pytest
+from helpers import PNG_SIGNATURE
 from support import require_module, require_pty_extras
 
 require_module("PIL")
 require_pty_extras()
 
 EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
-PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 #: Примеры по имени файла и числу картинок, которые каждый оставляет.
 SCRIPTS = {

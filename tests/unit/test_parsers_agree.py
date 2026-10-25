@@ -8,6 +8,7 @@
 import random
 
 import pytest
+from helpers import ESC
 from support import require_module
 
 require_module("pyte")
@@ -16,7 +17,6 @@ from termsnap import Line, parse
 from termsnap.model import PLAIN, Style
 from termsnap.screen import render
 
-ESC = "\x1b"
 COLUMNS = 80  # шире любой собранной строки: перенос по ширине экрана в этом тесте не проверяется
 
 WORDS = ["ab", "x", "text", "  ", "1234", "Привет", "wide:日本"]

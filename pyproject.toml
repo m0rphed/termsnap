@@ -51,6 +51,9 @@ dev = [
 line-length = 120
 extend-exclude = ["tests/programs"]   # программы, которые запускают тесты (в том числе заведомо плохой код)
 
+[tool.ruff.format]
+line-ending = "lf"                        # CRLF в файлах Python - ошибка `ruff format --check`
+
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "TID", "PLR1714", "C4", "ANN001", "ANN201", "ANN202"]
 ignore = ["RUF001", "RUF002", "RUF003"]   # кириллица в строках и комментариях - норма
@@ -76,7 +79,25 @@ markers = [
     "external: чужие команды (top, htop, IPython, node, pytest, ruff, git)",
 ]
 
+# Покрытие считается на каждой системе отдельно и потом объединяется (python ci/run.py coverage): в Windows не
+# выполняется posix.py, в Linux и macOS - conpty.py, поэтому по одной системе общей картины нет.
+[tool.coverage.run]
+source = ["termsnap"]
+branch = true
+relative_files = true
+
+[tool.coverage.paths]
+# одни и те же файлы под разными путями (Windows, Linux, окружение вне каталога проекта) - один файл в отчете
+source = ["src/termsnap/", "src\\termsnap\\", "*/site-packages/termsnap/", "*\\site-packages\\termsnap\\"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
 [tool.ruff.lint.per-file-ignores]
+# необязательная зависимость проверяется (extras.need) раньше, чем импортируется то, что без нее не загрузится
+"src/termsnap/png/__init__.py" = ["E402"]
+"src/termsnap/screen/__init__.py" = ["E402"]
 "tests/**/*.py" = [
     "ANN",    # в тестах аннотации возвращаемого значения не нужны
     "E402",   # require_module("PIL") стоит перед импортом того, что без нее не загрузится (как pytest.importorskip)

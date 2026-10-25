@@ -10,14 +10,10 @@ IPython берется из окружения проекта (группа ``ex
 
 import re
 
+from helpers import texts
 from picture import check_snapshot_picture
 
 from termsnap import Capture, Indexed, Span, Style
-
-
-def texts(capture: Capture) -> list[str]:
-    return [line.text for line in capture.lines]
-
 
 # --- top и htop ---
 
@@ -75,16 +71,21 @@ def test_ipython_repl_shows_the_whole_session(pty_captures):
     assert texts(capture) == IPYTHON_SESSION
 
 
-def test_ipython_prompt_input_and_values_are_coloured(pty_captures):
-    lines = pty_captures("ipython_session").lines
-    prompt, number, colon, *code = lines[1].spans  # "In [", "1", "]: " и подсвеченный код
+def test_ipython_input_prompt_is_green_with_a_bold_number(pty_captures):
+    prompt, number, colon, *_ = pty_captures("ipython_session").lines[1].spans  # "In [", "1", "]: " и код
     assert (prompt.text, prompt.style) == ("In [", Style(fg=GREEN))
     assert (number.text, colon.text, colon.style) == ("1", "]: ", Style(fg=GREEN))
     assert number.style.bold and number.style.fg in BRIGHT_OR_BOLD_GREEN
-    keyword = next(span for span in code if span.text == "for")
-    assert keyword.style.bold  # ключевое слово жирно, остальной код другими цветами
-    assert len({span.style for span in code}) >= 4
-    out, number, colon, value = lines[4].spans  # ответ красным
+
+
+def test_ipython_input_is_highlighted_as_code(pty_captures):
+    code = pty_captures("ipython_session").lines[1].spans[3:]  # после "In [", номера и "]: "
+    assert next(span for span in code if span.text == "for").style.bold  # ключевое слово жирно
+    assert len({span.style for span in code}) >= 4  # остальной код - другими цветами
+
+
+def test_ipython_output_prompt_is_red_with_a_bold_number_and_the_value_is_plain(pty_captures):
+    out, number, colon, value = pty_captures("ipython_session").lines[4].spans
     assert (out.text, out.style, colon.text, colon.style) == ("Out[", Style(fg=RED), "]: ", Style(fg=RED))
     assert number.style.bold and number.style.fg in BRIGHT_OR_BOLD_RED
     assert (value.text, value.style) == ("[0, 1, 4, 9, 16, 25]", Style())

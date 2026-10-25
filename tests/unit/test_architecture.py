@@ -9,8 +9,6 @@
 import ast
 from pathlib import Path
 
-import pytest
-
 import termsnap
 
 SOURCE = Path(termsnap.__file__).parent
@@ -20,21 +18,22 @@ ALLOWED: dict[str, set[str]] = {
     # основа: ни от чего не зависит
     "defaults": set(),
     "errors": set(),
+    "extras": {"errors"},  # понятная ошибка, когда нет необязательной зависимости
     "width": set(),  # ширина символов в клетках терминала
     "scenario": set(),  # клавиши, паузы, момент снимка
     # модель вывода и то, что строится на ней
     "model": {"width"},
     "ansi": {"model", "width"},  # построчный разбор потока
     "theme": {"model"},  # цвета палитры
-    "screen": {"ansi", "model", "width"},  # эмулятор экрана (нужен pyte)
+    "screen": {"ansi", "extras", "model", "width"},  # эмулятор экрана (нужен pyte)
     # запуск
     "request": {"defaults", "scenario"},
     "capture": {"defaults", "model"},
     "environment": {"defaults"},
-    "backends": {"ansi", "errors", "model", "request", "scenario", "screen"},
+    "backends": {"ansi", "errors", "extras", "model", "request", "scenario", "screen"},
     "runner": {"backends", "capture", "defaults", "environment", "request", "scenario"},
     # рисование в PNG (нужен Pillow): не знает ни о запуске, ни о разборе потока
-    "png": {"errors", "model", "theme", "width"},
+    "png": {"errors", "extras", "model", "theme", "width"},
 }
 
 #: Где разрешено импортировать необязательную зависимость (по частям пути относительно ``termsnap``).
@@ -68,33 +67,56 @@ def top_level(path: Path) -> str:
     return path.relative_to(SOURCE).parts[0].removesuffix(".py")
 
 
-@pytest.mark.parametrize("path", modules(), ids=lambda path: str(path.relative_to(SOURCE)))
-def test_module_imports_only_what_its_layer_allows(path: Path):
-    owner = top_level(path)
-    if owner == "__init__":  # корень пакета собирает публичный интерфейс из всех слоев
-        return
-    used = {
-        name.split(".")[1] if name.count(".") else "<root>"
-        for name in imported(path)
-        if name == "termsnap" or name.startswith("termsnap.")
-    }
-    used -= {owner}
-    # "from termsnap.model import X" даст и "termsnap.model", и "termsnap.model.X": лишнее отбрасываем по первому уровню
-    assert used <= ALLOWED[owner], (
-        f"{owner} импортирует {sorted(used - ALLOWED[owner])}, а вправе только {sorted(ALLOWED[owner])}"
-    )
+def layer_violations(allowed: dict[str, set[str]] = ALLOWED) -> list[str]:
+    """
+    Модули, которые импортируют слой, не разрешенный таблицей ``allowed`` (по умолчанию ``ALLOWED``).
+    """
+    found = []
+    for path in modules():
+        owner = top_level(path)
+        if owner == "__init__":  # корень пакета собирает публичный интерфейс из всех слоев
+            continue
+        # "from termsnap.model import X" дает и "termsnap.model", и "termsnap.model.X": берется первый уровень
+        used = {
+            name.split(".")[1] if name.count(".") else "<root>"
+            for name in imported(path)
+            if name == "termsnap" or name.startswith("termsnap.")
+        }
+        extra = used - {owner} - allowed[owner]
+        if extra:
+            where = path.relative_to(SOURCE).as_posix()
+            found.append(f"{where}: импортирует {sorted(extra)}, а слой {owner} вправе только {sorted(allowed[owner])}")
+    return found
+
+
+def optional_dependency_violations() -> list[str]:
+    """
+    Модули, которые импортируют необязательную зависимость вне ее пакета.
+    """
+    found = []
+    for path in modules():
+        relative = path.relative_to(SOURCE).parts
+        for name in imported(path):
+            home = OPTIONAL_DEPENDENCIES.get(name.split(".")[0])
+            if home is not None and relative[: len(home)] != home:
+                found.append(f"{'/'.join(relative)}: импортирует {name}, а ему можно только в {'/'.join(home)}")
+    return found
+
+
+def test_every_module_imports_only_what_its_layer_allows():
+    assert layer_violations() == []
 
 
 def test_every_top_level_module_is_described():
     assert {top_level(path) for path in modules()} - {"__init__"} == set(ALLOWED)
 
 
-@pytest.mark.parametrize("path", modules(), ids=lambda path: str(path.relative_to(SOURCE)))
-def test_optional_dependencies_stay_in_their_packages(path: Path):
-    relative = path.relative_to(SOURCE).parts
-    for name in imported(path):
-        home = OPTIONAL_DEPENDENCIES.get(name.split(".")[0])
-        if home is not None:
-            assert relative[: len(home)] == home, (
-                f"{path.name} импортирует {name}, а ему можно только в {'/'.join(home)}"
-            )
+def test_optional_dependencies_stay_in_their_packages():
+    assert optional_dependency_violations() == []
+
+
+def test_the_layer_rule_notices_a_forbidden_import():
+    # правило, которое ничего не находит, неотличимо от сломанного: слою png запрещаем все, и оно должно сработать
+    violations = layer_violations({**ALLOWED, "png": set()})
+    assert violations
+    assert all(line.startswith("png/") for line in violations)

@@ -12,6 +12,10 @@
 ``responder`` отвечает на запросы программы и экран не показывает.
 """
 
+from termsnap.extras import need
+
+need("pyte", "pty", "Эмуляция экрана терминала")
+
 from termsnap.screen.rendering import HISTORY_LINES, render
 from termsnap.screen.responder import Responder
 

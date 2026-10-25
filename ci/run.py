@@ -78,7 +78,9 @@ def types(env: dict[str, str]) -> int:
     return run(["uv", "run", "basedpyright"], env)
 
 
-def test(env: dict[str, str], pytest_args: Sequence[str] = (), level: str | None = None) -> int:
+def test(
+    env: dict[str, str], pytest_args: Sequence[str] = (), level: str | None = None, *, coverage: bool = False
+) -> int:
     """
     pytest без сети: окружение уже собрано шагом ``sync``, и если тесту или ``uv`` что-то понадобилось из сети (чужая
     программа через ``uvx``, обновление окружения), это ошибка, а не незаметная загрузка.
@@ -87,7 +89,36 @@ def test(env: dict[str, str], pytest_args: Sequence[str] = (), level: str | None
     быть на этой системе, - тест падает, а не пропускается; пропуски разрешены только ожидаемые.
     """
     marker = ["-m", level] if level else []
-    return run(["uv", "run", "pytest", "-ra", *marker, *pytest_args], env | {"UV_OFFLINE": "1", "TERMSNAP_STRICT": "1"})
+    measure = ["--cov", "--cov-append", "--cov-report="] if coverage else []
+    env = env | {"UV_OFFLINE": "1", "TERMSNAP_STRICT": "1"}
+    if coverage:
+        env["COVERAGE_FILE"] = str(coverage_file())
+    return run(["uv", "run", "pytest", "-ra", *marker, *measure, *pytest_args], env)
+
+
+def coverage_file() -> Path:
+    """
+    Файл данных покрытия этой системы и версии Python: ``coverage/data-<система>-py<версия>``. Три уровня тестов пишут в
+    один файл (``--cov-append``), а файлы разных систем потом объединяет ``coverage_report``.
+    """
+    version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    return ROOT / "coverage" / f"data-{sys.platform}-py{version}"
+
+
+def coverage_report(env: dict[str, str]) -> int:
+    """
+    Объединяет данные покрытия всех систем из каталога ``coverage`` и печатает общий отчет: какие строки не выполнил
+    ни один прогон.
+    """
+    files = sorted((ROOT / "coverage").glob("data-*"))
+    if not files:
+        print("нет данных покрытия: сначала python ci/run.py all --coverage", file=sys.stderr)
+        return 2
+    target = ROOT / "coverage" / "combined"
+    target.unlink(missing_ok=True)  # прошлый общий файл не должен примешиваться к новому
+    combined = env | {"COVERAGE_FILE": str(target)}
+    code = run(["uv", "run", "coverage", "combine", "--keep", *map(str, files)], combined)
+    return code or run(["uv", "run", "coverage", "report"], combined)
 
 
 def system_deps() -> int:
@@ -131,7 +162,7 @@ def report(results: dict[str, int]) -> int:
     return 0 if all(code == 0 for code in results.values()) else 1
 
 
-def check_all(python: str | None) -> int:
+def check_all(python: str | None, *, coverage: bool = False) -> int:
     env = uv_env(python)
     print(f"== {platform.platform()}, python {python or 'по умолчанию'}, {shutil.which('uv')} ==", flush=True)
     code = sync(env)
@@ -139,7 +170,7 @@ def check_all(python: str | None) -> int:
         return report({"sync": code})
     results: dict[str, int] = {}
     steps: list[tuple[str, Callable[[dict[str, str]], int]]] = [("lint", lint), ("types", types)]
-    steps += [(f"test {level}", partial(test, level=level)) for level in LEVELS]
+    steps += [(f"test {level}", partial(test, level=level, coverage=coverage)) for level in LEVELS]
     for name, step in steps:
         started = time.monotonic()
         code = step(env)
@@ -154,13 +185,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Проверки проекта: стиль, типы, тесты.")
     parser.add_argument("--python", help="версия Python (например, 3.13); по умолчанию та, что выберет uv")
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("all", help="sync, lint, types, test: все проверки с итогом в конце")
+    all_parser = commands.add_parser("all", help="sync, lint, types, test: все проверки с итогом в конце")
+    all_parser.add_argument("--coverage", action="store_true", help="собирать покрытие в coverage/data-<система>")
     commands.add_parser("sync", help="uv sync --locked")
     commands.add_parser("lint", help="ruff format --check и ruff check")
     commands.add_parser("types", help="basedpyright")
     pytest_parser = commands.add_parser("test", help="pytest; аргументы после -- уходят в pytest")
     pytest_parser.add_argument("--level", choices=LEVELS, help="только один уровень тестов (по умолчанию все)")
+    pytest_parser.add_argument("--coverage", action="store_true", help="собирать покрытие в coverage/data-<система>")
     pytest_parser.add_argument("pytest_args", nargs=argparse.REMAINDER)
+    commands.add_parser("coverage", help="объединить покрытие всех систем из coverage/ и напечатать отчет")
     commands.add_parser("system-deps", help="системные пакеты для Linux")
     docker_parser = commands.add_parser("docker", help="все проверки в контейнерах")
     docker_parser.add_argument("versions", nargs="*", default=list(PYTHONS), help="версии Python")
@@ -173,7 +207,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     env = uv_env(args.python)
     match args.command:
         case "all":
-            return check_all(args.python)
+            return check_all(args.python, coverage=args.coverage)
         case "sync":
             return sync(env)
         case "lint":
@@ -182,7 +216,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return types(env)
         case "test":
             pytest_args = [item for item in args.pytest_args if item != "--"]
-            return test(env, pytest_args, args.level)
+            return test(env, pytest_args, args.level, coverage=args.coverage)
+        case "coverage":
+            return coverage_report(env)
         case "system-deps":
             return system_deps()
         case "docker":

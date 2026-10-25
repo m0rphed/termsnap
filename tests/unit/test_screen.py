@@ -1,49 +1,65 @@
+"""
+Эмулятор экрана: поток терминала превращается в строки со стилями так, как его показал бы настоящий терминал.
+"""
+
+import pytest
+from helpers import ESC, VS16, ZWJ
 from support import require_module
 
 require_module("pyte")
 
 from termsnap import PLAIN, Indexed, Rgb, Style
-from termsnap.screen import Responder, render
-
-ESC = "\x1b"
-VS16 = chr(0xFE0F)
-ZWJ = chr(0x200D)
+from termsnap.screen import render
 
 
 def screen(text: str, *, columns: int = 40, rows: int = 10, visible_only: bool = False):
     return render(text, columns=columns, rows=rows, visible_only=visible_only)
 
 
-def texts(text: str, **options: int | bool) -> list[str]:
+def screen_texts(text: str, **options: int | bool) -> list[str]:
     return [line.text for line in screen(text, **options)]
 
 
-def test_plain_text_lines_without_trailing_blank_cells():
-    assert texts("one\r\ntwo\r\n") == ["one", "two"]
+def only_line(text: str):
+    (line,) = screen(text)
+    return line
+
+
+def test_plain_text_lines_have_no_trailing_blank_cells():
+    assert screen_texts("one\r\ntwo\r\n") == ["one", "two"]
+
+
+def test_empty_output_has_no_lines():
     assert screen("") == ()
 
 
-def test_basic_styles_and_palette_index_are_kept():
-    (line,) = screen(f"{ESC}[1;31mred{ESC}[0m {ESC}[38;5;202mtone{ESC}[0m {ESC}[48;5;17mbg{ESC}[0m")
-    styles = {span.text: span.style for span in line.spans}
-    assert styles["red"] == Style(fg=Indexed(1), bold=True)
-    assert styles["tone"] == Style(fg=Indexed(202))
-    assert styles["bg"] == Style(bg=Indexed(17))
-    assert styles[" "] == PLAIN
+@pytest.mark.parametrize(
+    ("sgr", "expected"),
+    [
+        ("1;31", Style(fg=Indexed(1), bold=True)),
+        ("38;5;202", Style(fg=Indexed(202))),
+        ("48;5;17", Style(bg=Indexed(17))),
+        ("38;2;10;20;30", Style(fg=Rgb(10, 20, 30))),
+        ("3;4;7;9", Style(italic=True, underline=True, inverse=True, strike=True)),
+    ],
+    ids=["bold red", "palette foreground", "palette background", "truecolor", "italic underline inverse strike"],
+)
+def test_styles_and_colours_are_kept_as_the_program_wrote_them(sgr: str, expected: Style):
+    assert only_line(f"{ESC}[{sgr}mx").spans[0].style == expected
+
+
+def test_unstyled_text_between_styled_words_is_plain():
+    line = only_line(f"{ESC}[31mred{ESC}[0m plain")
+    assert [(span.text, span.style) for span in line.spans] == [("red", Style(fg=Indexed(1))), (" plain", PLAIN)]
 
 
 def test_bright_colors_map_to_indexes_8_to_15():
-    (line,) = screen(f"{ESC}[91ma{ESC}[0m{ESC}[102mb")
+    line = only_line(f"{ESC}[91ma{ESC}[0m{ESC}[102mb")
     assert [span.style for span in line.spans] == [Style(fg=Indexed(9)), Style(bg=Indexed(10))]
 
 
-def test_truecolor():
-    (line,) = screen(f"{ESC}[38;2;10;20;30mx")
-    assert line.spans[0].style.fg == Rgb(10, 20, 30)
-
-
 def test_dim_is_kept_and_switched_off_by_22_and_0():
-    (line,) = screen(f"{ESC}[2ma{ESC}[22mb{ESC}[2mc{ESC}[0md")
+    line = only_line(f"{ESC}[2ma{ESC}[22mb{ESC}[2mc{ESC}[0md")
     assert [(span.text, span.style.dim) for span in line.spans] == [
         ("a", True),
         ("b", False),
@@ -52,95 +68,63 @@ def test_dim_is_kept_and_switched_off_by_22_and_0():
     ]
 
 
-def test_dim_inside_extended_color_arguments_is_not_mistaken_for_the_attribute():
-    (line,) = screen(f"{ESC}[38;5;2mx")  # 2 здесь - номер цвета палитры
-    assert line.spans[0].style == Style(fg=Indexed(2))
-    (line,) = screen(f"{ESC}[38;2;2;2;2mx")
-    assert not line.spans[0].style.dim
-
-
-def test_inverse_underline_italic_strike():
-    (line,) = screen(f"{ESC}[3;4;7;9mx")
-    assert line.spans[0].style == Style(italic=True, underline=True, inverse=True, strike=True)
+@pytest.mark.parametrize(
+    ("sgr", "expected"),
+    [("38;5;2", Style(fg=Indexed(2))), ("38;2;2;2;2", Style(fg=Rgb(2, 2, 2)))],
+    ids=["palette number", "truecolor channels"],
+)
+def test_the_digit_2_inside_extended_colour_arguments_is_not_mistaken_for_dim(sgr: str, expected: Style):
+    assert only_line(f"{ESC}[{sgr}mx").spans[0].style == expected
 
 
 def test_background_of_trailing_blank_cells_is_kept():
-    (line,) = screen(f"{ESC}[44m   ")
-    assert line.text == "   "
-    assert line.spans[0].style.bg == Indexed(4)
+    line = only_line(f"{ESC}[44m   ")
+    assert (line.text, line.spans[0].style.bg) == ("   ", Indexed(4))
 
 
 def test_absolute_positions_and_overwriting():
     text = f"{ESC}[2J{ESC}[1;1Hfirst{ESC}[3;5Hthird{ESC}[1;1H{ESC}[2Kfresh"
-    assert texts(text) == ["fresh", "", "    third"]
+    assert screen_texts(text) == ["fresh", "", "    third"]
 
 
 def test_long_output_keeps_the_lines_that_scrolled_off_the_screen():
-    result = texts("".join(f"line {number}\r\n" for number in range(1, 31)), rows=5)
+    result = screen_texts("".join(f"line {number}\r\n" for number in range(1, 31)), rows=5)
     assert result == [f"line {number}" for number in range(1, 31)]
 
 
 def test_long_lines_wrap_at_the_terminal_width():
-    assert texts("a" * 25, columns=10) == ["a" * 10, "a" * 10, "a" * 5]
+    assert screen_texts("a" * 25, columns=10) == ["a" * 10, "a" * 10, "a" * 5]
 
 
 def test_cursor_up_redraws_the_last_lines():
     text = "one\r\ntwo\r\n" + f"{ESC}[2A{ESC}[2K" + "ONE\r\n" + f"{ESC}[2K" + "TWO\r\n"
-    assert texts(text) == ["ONE", "TWO"]
+    assert screen_texts(text) == ["ONE", "TWO"]
 
 
-def test_wide_characters_keep_columns_and_text():
-    (line,) = screen("日本x")
-    assert line.text == "日本x"
-    assert line.width == 5
+def test_wide_characters_keep_their_text():
+    assert only_line("日本x").text == "日本x"
+
+
+def test_wide_characters_take_two_columns_each():
+    assert only_line("日本x").width == 5
 
 
 def test_zero_width_characters_do_not_drop_the_rest_of_the_line():
     warning = chr(0x26A0) + VS16
     family = chr(0x1F468) + ZWJ + chr(0x1F469)
-    assert texts(f"a {warning} b {family} end") == [f"a {warning} b {family} end"]
-    assert screen(f"a {warning} b")[0].width == 6  # эмодзи с селектором занимает две клетки
+    assert screen_texts(f"a {warning} b {family} end") == [f"a {warning} b {family} end"]
+
+
+def test_emoji_with_a_selector_takes_two_cells():
+    assert only_line(f"a {chr(0x26A0) + VS16} b").width == 6
 
 
 def test_combining_marks_join_the_previous_character():
-    assert texts("e" + chr(0x301) + "x") == ["e" + chr(0x301) + "x"]
+    assert screen_texts("e" + chr(0x301) + "x") == ["e" + chr(0x301) + "x"]
 
 
 def test_window_and_mode_sequences_leave_no_trace():
-    assert texts(f"{ESC}[1t{ESC}[c{ESC}[?1004h{ESC}[?25l{ESC}]0;title\x07text") == ["text"]
-
-
-# --- ответы на запросы программы к терминалу ---
-
-
-def test_responder_answers_cursor_position_requests():
-    responder = Responder(80, 24)
-    assert responder.feed(f"abc{ESC}[6n".encode()) == f"{ESC}[1;4R".encode()
-    assert responder.feed(f"{ESC}[3;5H{ESC}[6n".encode()) == f"{ESC}[3;5R".encode()
-
-
-def test_responder_answers_device_attribute_and_status_requests():
-    assert Responder(80, 24).feed(f"{ESC}[c".encode()) == f"{ESC}[?6c".encode()
-    assert Responder(80, 24).feed(f"{ESC}[5n".encode()) == f"{ESC}[0n".encode()
-
-
-def test_responder_is_silent_for_ordinary_output():
-    responder = Responder(80, 24)
-    assert responder.feed(f"hello {ESC}[1;31mred{ESC}[0m".encode()) == b""
-
-
-def test_responder_copes_with_characters_and_requests_split_between_chunks():
-    data = f"привет{ESC}[6n".encode()
-    responder = Responder(80, 24)
-    assert responder.feed(data[:3]) == b""  # оборвано посреди буквы
-    assert responder.feed(data[3:-2]) == b""  # и посреди запроса
-    assert responder.feed(data[-2:]) == f"{ESC}[1;7R".encode()
-
-
-def test_responder_does_not_repeat_old_answers():
-    responder = Responder(80, 24)
-    assert responder.feed(f"{ESC}[6n".encode())
-    assert responder.feed(b"more") == b""
+    assert screen_texts(f"{ESC}[1t{ESC}[c{ESC}[?1004h{ESC}[?25l{ESC}]0;title\x07text") == ["text"]
 
 
 # --- только видимая часть экрана ---
@@ -151,16 +135,18 @@ def numbered(count: int) -> str:
 
 
 def test_visible_only_drops_the_lines_that_scrolled_off_the_screen():
-    assert texts(numbered(30), rows=5, visible_only=True) == [f"line {number}" for number in range(27, 31)]
-    assert len(texts(numbered(30), rows=5)) == 30  # по умолчанию ничего не теряется
+    assert screen_texts(numbered(30), rows=5, visible_only=True) == [f"line {number}" for number in range(27, 31)]
+
+
+def test_by_default_nothing_scrolled_off_the_screen_is_lost():
+    assert len(screen_texts(numbered(30), rows=5)) == 30
 
 
 def test_visible_only_changes_nothing_when_everything_fits_on_the_screen():
-    assert texts(numbered(3), rows=10, visible_only=True) == texts(numbered(3), rows=10)
+    assert screen_texts(numbered(3), rows=10, visible_only=True) == screen_texts(numbered(3), rows=10)
 
 
 def test_visible_only_keeps_styles_and_absolute_positions():
     text = numbered(20) + f"{ESC}[1;1H{ESC}[2K{ESC}[1;31mtop{ESC}[0m"
     lines = screen(text, rows=5, visible_only=True)
-    assert lines[0].text == "top"  # перерисовали верх видимого экрана
-    assert lines[0].spans[0].style == Style(fg=Indexed(1), bold=True)
+    assert (lines[0].text, lines[0].spans[0].style) == ("top", Style(fg=Indexed(1), bold=True))

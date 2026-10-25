@@ -68,13 +68,14 @@ def test_other_characters_have_no_arms(char):
     assert arms_of(char) is None
 
 
-def test_which_characters_are_drawn_by_the_library():
-    assert is_box_char("│")
-    assert is_box_char("█")
-    assert is_box_char("⣿")
-    assert not is_box_char("A")
-    assert not is_box_char("╱")
-    assert not is_box_char("ab")
+@pytest.mark.parametrize("char", ["│", "█", "⣿"], ids=["line", "block", "braille"])
+def test_lines_blocks_and_braille_are_drawn_by_the_library(char: str):
+    assert is_box_char(char)
+
+
+@pytest.mark.parametrize("char", ["A", "╱", "ab"], ids=["letter", "diagonal", "two characters"])
+def test_everything_else_is_left_to_the_font(char: str):
+    assert not is_box_char(char)
 
 
 # --- линии: клетка 7 x 9, тонкая линия в один пиксель; центр клетки - столбец 3 и строка 4 ---
@@ -367,12 +368,20 @@ def lit(image: Image.Image, x: int, y: int) -> bool:
     return image.getpixel((x, y)) == FG
 
 
-def test_rounded_corner_does_not_cover_the_centre_but_reaches_both_edges():
-    square, rounded = draw("┌"), draw("╭")
-    assert lit(square, CX, CY)
-    assert not lit(rounded, CX, CY)  # дуга обходит центр
-    assert lit(rounded, CX, HEIGHT - 1)  # вертикальный конец доходит до нижнего края
-    assert any(lit(rounded, WIDTH - 1, y) for y in range(HEIGHT))  # горизонтальный - до правого
+def test_square_corner_covers_the_centre_of_the_cell():
+    assert lit(draw("┌"), CX, CY)
+
+
+def test_rounded_corner_goes_round_the_centre_of_the_cell():
+    assert not lit(draw("╭"), CX, CY)
+
+
+def test_rounded_corner_reaches_the_bottom_edge_with_its_vertical_end():
+    assert lit(draw("╭"), CX, HEIGHT - 1)
+
+
+def test_rounded_corner_reaches_the_right_edge_with_its_horizontal_end():
+    assert any(lit(draw("╭"), WIDTH - 1, y) for y in range(HEIGHT))
 
 
 @pytest.mark.parametrize("light", [1, 2, 3])
@@ -393,11 +402,14 @@ def test_rounded_corner_ends_join_the_straight_lines_of_the_neighbours(char, ver
     ]
 
 
-def test_rounded_corner_is_antialiased_and_symmetric_to_its_mirror():
+def test_rounded_corner_is_antialiased():
     corner = draw("╭")
     assert len({corner.getpixel((x, y)) for x in range(WIDTH) for y in range(HEIGHT)}) > 3  # есть промежуточные цвета
+
+
+def test_rounded_corner_is_symmetric_to_its_mirror():
     mirrored = draw("╮").transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-    assert corner.tobytes() == mirrored.tobytes()
+    assert draw("╭").tobytes() == mirrored.tobytes()
 
 
 # --- блоки: клетка 8 x 8 ---

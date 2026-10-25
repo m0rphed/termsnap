@@ -3,10 +3,23 @@
 """
 
 import pytest
+from helpers import ESC
 
 from termsnap import Key, Keys
 
-ESC = "\x1b"
+
+@pytest.mark.parametrize(
+    ("key", "sequence"),
+    [
+        (Key.ENTER, "\r"),
+        (Key.TAB, "\t"),
+        (Key.ESC, ESC),
+        (Key.BACKSPACE, "\x7f"),  # то, что посылает клавиша Backspace в xterm, а не Ctrl+H
+    ],
+    ids=["enter", "tab", "esc", "backspace"],
+)
+def test_editing_keys_are_single_control_characters(key: Keys, sequence: str):
+    assert key.text == sequence
 
 
 def test_function_keys_follow_the_xterm_table():
@@ -26,22 +39,34 @@ def test_function_keys_follow_the_xterm_table():
     }
 
 
-def test_cursor_keys_use_csi_and_home_end_are_not_confused():
-    assert (Key.UP.text, Key.DOWN.text, Key.RIGHT.text, Key.LEFT.text) == (
-        f"{ESC}[A",
-        f"{ESC}[B",
-        f"{ESC}[C",
-        f"{ESC}[D",
-    )
-    assert (Key.HOME.text, Key.END.text) == (f"{ESC}[H", f"{ESC}[F")
-    assert (Key.PAGE_UP.text, Key.PAGE_DOWN.text, Key.DELETE.text) == (f"{ESC}[5~", f"{ESC}[6~", f"{ESC}[3~")
+@pytest.mark.parametrize(
+    ("key", "sequence"),
+    [
+        (Key.UP, f"{ESC}[A"),
+        (Key.DOWN, f"{ESC}[B"),
+        (Key.RIGHT, f"{ESC}[C"),
+        (Key.LEFT, f"{ESC}[D"),
+        (Key.HOME, f"{ESC}[H"),
+        (Key.END, f"{ESC}[F"),
+        (Key.PAGE_UP, f"{ESC}[5~"),
+        (Key.PAGE_DOWN, f"{ESC}[6~"),
+        (Key.DELETE, f"{ESC}[3~"),
+    ],
+    ids=["up", "down", "right", "left", "home", "end", "page up", "page down", "delete"],
+)
+def test_navigation_keys_are_csi_sequences(key: Keys, sequence: str):
+    assert key.text == sequence
 
 
-def test_ctrl_letter_is_the_position_of_the_letter_in_the_alphabet():
-    assert Key.ctrl("a") == Keys("\x01")
-    assert Key.ctrl("C") == Key.CTRL_C == Keys("\x03")
-    assert Key.ctrl("d") == Key.CTRL_D
-    assert Key.ctrl("z") == Keys("\x1a")
+@pytest.mark.parametrize(
+    ("letter", "code"), [("a", "\x01"), ("C", "\x03"), ("d", "\x04"), ("l", "\x0c"), ("z", "\x1a")]
+)
+def test_ctrl_letter_is_the_position_of_the_letter_in_the_alphabet(letter: str, code: str):
+    assert Key.ctrl(letter) == Keys(code)
+
+
+def test_named_ctrl_keys_are_the_same_as_ctrl_letters():
+    assert (Key.ctrl("c"), Key.ctrl("d")) == (Key.CTRL_C, Key.CTRL_D)
 
 
 @pytest.mark.parametrize("bad", ["", "ab", "1", "ж", " "])

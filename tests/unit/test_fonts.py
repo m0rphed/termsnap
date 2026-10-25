@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from fakes import InstalledFonts
 from support import require_module
 
 require_module("PIL")
@@ -9,7 +10,7 @@ from PIL import ImageFont
 
 from termsnap.errors import FontNotFound
 from termsnap.png import fonts
-from termsnap.png.fonts import Face, FontSet, fontconfig, parse_fc_list, registry_name_matches, resolution
+from termsnap.png.fonts import Face, FontSet, fontconfig, parse_fc_list, registry_name_matches
 
 
 def face(style: str, family: str = "Fam", name: str | None = None) -> Face:
@@ -69,28 +70,41 @@ def test_font_set_accepts_roman_as_the_regular_face():
     assert fontset.regular.style == "Roman"
 
 
-def test_pick_uses_real_faces_and_marks_missing_bold_as_synthetic():
-    full = FontSet.from_faces([face("Regular"), face("Bold"), face("Italic"), face("Bold Italic")])
-    assert full is not None
-    assert full.pick(bold=True, italic=True) == (full.bold_italic, False)
-    assert full.pick(bold=True, italic=False) == (full.bold, False)
-    assert full.pick(bold=False, italic=True) == (full.italic, False)
-    assert full.pick(bold=False, italic=False) == (full.regular, False)
-
-    only_regular = FontSet.from_faces([face("Regular")])
-    assert only_regular is not None
-    assert only_regular.pick(bold=True, italic=False) == (only_regular.regular, True)
-    assert only_regular.pick(bold=True, italic=True) == (only_regular.regular, True)
-    assert only_regular.pick(bold=False, italic=True) == (only_regular.regular, False)
+REGULAR, BOLD, ITALIC, BOLD_ITALIC = "Regular", "Bold", "Italic", "Bold Italic"
 
 
-def test_pick_bold_italic_falls_back_to_bold_then_italic():
-    bold_only = FontSet.from_faces([face("Regular"), face("Bold")])
-    assert bold_only is not None
-    assert bold_only.pick(bold=True, italic=True) == (bold_only.bold, False)
-    italic_only = FontSet.from_faces([face("Regular"), face("Italic")])
-    assert italic_only is not None
-    assert italic_only.pick(bold=True, italic=True) == (italic_only.italic, True)
+@pytest.mark.parametrize(
+    ("available", "bold", "italic", "chosen", "synthetic"),
+    [
+        ([REGULAR, BOLD, ITALIC, BOLD_ITALIC], True, True, BOLD_ITALIC, False),
+        ([REGULAR, BOLD, ITALIC, BOLD_ITALIC], True, False, BOLD, False),
+        ([REGULAR, BOLD, ITALIC, BOLD_ITALIC], False, True, ITALIC, False),
+        ([REGULAR, BOLD, ITALIC, BOLD_ITALIC], False, False, REGULAR, False),
+        ([REGULAR], True, False, REGULAR, True),  # жирного начертания нет: жирность рисуется наложением
+        ([REGULAR], True, True, REGULAR, True),
+        ([REGULAR], False, True, REGULAR, False),  # курсива нет: обычное начертание без наложения
+        ([REGULAR, BOLD], True, True, BOLD, False),  # жирный курсив без своего начертания: берется жирное
+        ([REGULAR, ITALIC], True, True, ITALIC, True),  # ... или курсивное, и жирность наложением
+    ],
+    ids=[
+        "all faces, bold italic",
+        "all faces, bold",
+        "all faces, italic",
+        "all faces, regular",
+        "regular only, bold is synthetic",
+        "regular only, bold italic is synthetic",
+        "regular only, italic is not synthetic",
+        "no bold italic: falls back to bold",
+        "no bold italic, no bold: falls back to italic with synthetic bold",
+    ],
+)
+def test_pick_chooses_the_closest_real_face_and_says_whether_bold_is_synthetic(
+    available: list[str], bold: bool, italic: bool, chosen: str, synthetic: bool
+):
+    fontset = FontSet.from_faces([face(style) for style in available])
+    assert fontset is not None
+    picked, is_synthetic = fontset.pick(bold=bold, italic=italic)
+    assert (picked.style if picked else None, is_synthetic) == (chosen, synthetic)
 
 
 @pytest.mark.parametrize(
@@ -152,16 +166,12 @@ def test_from_files_reports_an_unreadable_regular_file(tmp_path: Path):
         fonts.from_files(tmp_path / "missing.ttf")
 
 
-def test_resolve_skips_missing_families_and_families_without_the_needed_glyphs(monkeypatch: pytest.MonkeyPatch):
-    sets = {
-        "Poor": FontSet.from_faces([face("Regular", "Poor")]),
-        "Rich": FontSet.from_faces([face("Regular", "Rich")]),
-    }
-    monkeypatch.setattr(resolution, "find_family", sets.get)
-    monkeypatch.setattr(resolution, "missing_glyphs", lambda face, chars: "Ж" if face.family == "Poor" else "")
-    assert fonts.resolve(["Absent", "Poor", "Rich"], covers="Ж").family == "Rich"
+def test_resolve_skips_missing_families_and_families_without_the_needed_glyphs():
+    fake = InstalledFonts(["Poor", "Rich"], lacking={"Poor": "Ж"})
+    options = {"covers": "Ж", "lookup": fake.lookup, "missing_of": fake.missing_of}
+    assert fonts.resolve(["Absent", "Poor", "Rich"], **options).family == "Rich"
     with pytest.raises(FontNotFound) as caught:
-        fonts.resolve(["Absent", "Poor"], covers="Ж")
+        fonts.resolve(["Absent", "Poor"], **options)
     assert caught.value.problems == ["Absent: не установлен", "Poor: нет символов 'Ж'"]
 
 
@@ -195,16 +205,25 @@ def test_find_family_is_case_insensitive_and_unknown_family_is_none(system_fonts
     assert fonts.find_family("No Such Family termsnap") is None
 
 
-def test_glyph_check_tells_cyrillic_from_missing_symbols(system_fonts: FontSet):
-    font = ImageFont.truetype(
-        str(system_fonts.regular.path),
-        size=24,
-        index=system_fonts.regular.index,
-    )
-    assert fonts.has_glyph(font, "A")
-    assert fonts.has_glyph(font, "Ж")
-    assert not fonts.has_glyph(font, "\U0010ffff")
+@pytest.fixture
+def system_font(system_fonts: FontSet) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype(str(system_fonts.regular.path), size=24, index=system_fonts.regular.index)
+
+
+@pytest.mark.parametrize("char", ["A", "Ж"])
+def test_the_glyph_check_finds_latin_and_cyrillic_letters(system_font: ImageFont.FreeTypeFont, char: str):
+    assert fonts.has_glyph(system_font, char)
+
+
+def test_the_glyph_check_does_not_find_a_symbol_that_no_font_has(system_font: ImageFont.FreeTypeFont):
+    assert not fonts.has_glyph(system_font, chr(0x10FFFF))
+
+
+def test_missing_glyphs_are_empty_for_text_the_font_covers_and_whitespace(system_fonts: FontSet):
     assert fonts.missing_glyphs(system_fonts.regular, "A Ж\n\t") == ""
+
+
+def test_missing_glyphs_name_the_symbols_the_font_lacks(system_fonts: FontSet):
     assert fonts.missing_glyphs(system_fonts.regular, "A中") == "中"
 
 

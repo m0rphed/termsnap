@@ -7,6 +7,7 @@ import time
 from dataclasses import replace
 
 from termsnap.backends.executable import find_executable
+from termsnap.extras import need
 from termsnap.model import Line
 from termsnap.request import RawResult, Request
 
@@ -25,6 +26,10 @@ class PtyBackend:
     """
 
     def run(self, request: Request) -> RawResult:
+        # зависимости проверяются до запуска: иначе программа отработала бы, а вывод оказалось бы нечем разобрать.
+        # pyte проверяет сам termsnap.screen при импорте (его тянет платформенный модуль ниже), pywinpty - здесь
+        if sys.platform == "win32":
+            need("winpty", "pty", "Запуск в псевдотерминале (ConPTY)")
         executable = find_executable(request)
         request = _with_truecolor(request)
         started = time.perf_counter()
