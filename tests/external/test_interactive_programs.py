@@ -158,15 +158,19 @@ def test_man_page_is_scrolled_by_page_down_and_headings_are_bold(pty_captures):
 
 
 def test_man_page_marks_arguments_with_underline_and_commands_with_bold(pty_captures):
-    synopsis = pty_captures("man_scroll").lines[6].spans
-    # пробелы и скобки вокруг слов pager оставляет как есть, поэтому сравниваются только слова со стилем
-    assert [(span.text, span.style) for span in synopsis if span.style != Style()] == [
+    capture = pty_captures("man_scroll")
+    # номер строки зависит от шапки страницы (groff и mandoc ее верстают по-разному), поэтому строку ищем по словам
+    lines = [line for line in capture.lines if "--width" in line.text and "--color" in line.text]
+    assert len(lines) == 1, texts(capture)
+    # пробелы и скобки вокруг слов pager оставляет как есть, а groff разных версий подчеркивает и соседний пробел
+    styled = [(span.text.strip(), span.style) for span in lines[0].spans if span.style != Style() and span.text.strip()]
+    assert styled == [
         ("termsnap-demo", Style(bold=True)),
         ("--width", Style(bold=True)),
         ("N", Style(underline=True)),
         ("--color", Style(bold=True)),
         ("file", Style(underline=True)),
-    ]
+    ], lines[0].spans
 
 
 def test_man_search_jumps_to_the_word_and_highlights_it(pty_captures):

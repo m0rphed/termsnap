@@ -36,3 +36,13 @@ def test_a_program_without_a_system_tool_needs_nothing_from_the_system():
 def test_exclusions_for_other_systems_do_not_matter_here():
     other = next(name for name in SYSTEMS if name != HERE)
     require(program(absent={other: "только там"}))
+
+
+def test_a_program_does_not_learn_that_it_runs_on_ci(monkeypatch):
+    # pytest при CI показывает полный diff, и снимок на раннере отличался бы от локального
+    for name in ("CI", "BUILD_NUMBER", "GITHUB_ACTIONS"):
+        monkeypatch.setenv(name, "1")
+    monkeypatch.setenv("KEPT_AS_IS", "1")
+    env = program(env={"ADDED": "1"}).options["env"]
+    assert {"CI", "BUILD_NUMBER", "GITHUB_ACTIONS"}.isdisjoint(env)
+    assert env["KEPT_AS_IS"] == env["ADDED"] == "1"

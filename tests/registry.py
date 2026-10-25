@@ -63,12 +63,21 @@ class Program:
         """
         return {
             "cwd": self.cwd,
-            "env": {**os.environ, **self.env},
+            "env": {**_without_runner(os.environ), **self.env},
             "input": self.input,
             "prompt": self.prompt,
             "settle": self.settle,
             "snapshot": self.snapshot,
         }
+
+
+#: Переменные, по которым программы узнают, что работают на CI. С ними pytest показывает полный diff вместо
+#: подсказки "Use -v", а другие программы тоже меняют вывод, поэтому снимок на раннере отличался бы от локального.
+_RUNNER_VARIABLES = frozenset({"CI", "BUILD_NUMBER", "GITHUB_ACTIONS"})
+
+
+def _without_runner(env: Mapping[str, str]) -> dict[str, str]:
+    return {key: value for key, value in env.items() if key not in _RUNNER_VARIABLES}
 
 
 def _script(name: str) -> str:
