@@ -125,7 +125,7 @@
   размер должен быть (столбцы x клетка, строки x высота строки), на картинке есть фон и нарисованное; системный шрифт нужен
   только `test_command_to_png`, `test_examples`, `test_fonts` и двум тестам `test_appearance`
 - [x] E402 для `tests/**` отключен в `pyproject.toml` (`require_module` стоит перед импортом того, что без нее не загрузится)
-- [ ] git: закрепить версию (см. решение пользователя), Node закреплен (`nodejs-wheel-binaries`, `tests/pins.py`)
+- [x] git: закреплена линия x.y (`GIT_VERIFIED` = 2.39 и 2.55 в `tests/pins.py`, `test_pins` падает на другой), точную версию не закрепить: нет пакета в PyPI; Node закреплен (`nodejs-wheel-binaries`)
 
 ## 6. Прочая критика
 

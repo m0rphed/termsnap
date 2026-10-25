@@ -174,7 +174,7 @@ GIT_LOG = [
     "* c0314a5 Start the project",
 ]
 
-YELLOW, GREEN, RED = Indexed(3), Indexed(2), Indexed(1)
+YELLOW, CYAN, GREEN, RED = Indexed(3), Indexed(6), Indexed(2), Indexed(1)
 PLAIN = Style()
 
 
@@ -183,16 +183,24 @@ def test_git_log_graph_has_the_merge_the_branch_and_the_tag(captures):
 
 
 def test_git_log_colours_hashes_names_and_graph_lines(captures):
-    capture = captures("git_log")
-    lines = capture.lines
-    # git 2.39 красит "HEAD -> " одним куском, новые версии - по частям: стиль слов "HEAD" и стрелки сравнивать нельзя,
-    # а хеши, ветки, теги и линии графа красятся одинаково
-    assert lines[0].spans[:2] == (Span("*   ", PLAIN), Span("8b23d16 (", Style(fg=YELLOW)))
-    assert lines[0].spans[-1] == Span(" Merge feature", PLAIN)
-    names = styles_by_text(capture)
-    assert (names["main"], names["feature"]) == (Style(fg=GREEN, bold=True), Style(fg=GREEN, bold=True))
-    assert names["tag: v1"] == Style(fg=YELLOW, bold=True)
+    lines = captures("git_log").lines
+    head = Style(fg=CYAN, bold=True)
+    branch = Style(fg=GREEN, bold=True)
+    around = (Span("*   ", PLAIN), Span("8b23d16 (", Style(fg=YELLOW)))
+    after = (
+        *(Span("main", branch), Span(", ", Style(fg=YELLOW))),
+        *(Span("tag: v1", Style(fg=YELLOW, bold=True)), Span(")", Style(fg=YELLOW)), Span(" Merge feature", PLAIN)),
+    )
+    # старый git красит "HEAD -> " одним куском, новый - слово HEAD и стрелку по отдельности (проверены 2.39 и 2.55)
+    joined = (*around, Span("HEAD -> ", head), *after)
+    split = (*around, Span("HEAD", head), Span(" -> ", Style(fg=YELLOW)), *after)
+    assert lines[0].spans in (joined, split)
     assert lines[1].spans == (Span("|", Style(fg=RED)), Span("\\", Style(fg=GREEN)), Span("  ", PLAIN))
+    assert lines[2].spans[-3:] == (  # ветка без HEAD: имя зеленым жирным в скобках цвета хеша
+        Span("feature", branch),
+        Span(")", Style(fg=YELLOW)),
+        Span(" Draw the picture", PLAIN),
+    )
 
 
 # --- pytest: отчет о падении ---
