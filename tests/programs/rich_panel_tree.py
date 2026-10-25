@@ -2,7 +2,7 @@ from _console import make
 from rich.panel import Panel
 from rich.tree import Tree
 
-console = make()
+console = make(width=60)
 tree = Tree("📁 [bold blue]проект[/bold blue]")
 src = tree.add("📁 [bold]src[/bold]")
 src.add("🐍 [green]main.py[/green]")

@@ -42,7 +42,7 @@ dev = [
 
 [tool.ruff]
 line-length = 120
-extend-exclude = ["examples/programs"]   # образцы для проверки (в том числе заведомо плохой код)
+extend-exclude = ["tests/programs"]   # программы, которые запускают тесты (в том числе заведомо плохой код)
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "TID", "PLR1714", "C4", "ANN001", "ANN201", "ANN202"]
@@ -61,7 +61,6 @@ pythonVersion = "3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["examples"]
 addopts = ["--strict-markers"]
 # уровни проставляет tests/conftest.py по каталогу теста
 markers = [

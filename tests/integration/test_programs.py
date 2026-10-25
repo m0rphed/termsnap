@@ -1,16 +1,22 @@
 """
-Проверки на скриптах проекта (rich): нетривиальный цветной вывод, возврат каретки, перерисовка строк, эмодзи, иероглифы
-и псевдографика. Состав программ - ``examples/registry.py``. Чужие команды (node, pytest, ruff, git) - в ``external``.
+Скрипты rich из ``tests/programs`` запускаются в канале: нетривиальный цветной вывод, возврат каретки, перерисовка
+строк, эмодзи, иероглифы и псевдографика. Ожидаемый вывод каждой программы записан здесь же целиком, чтобы тест можно
+было прочитать без самой программы. Чужие команды (node, pytest, ruff, git) проверяются в ``tests/external``.
+
+Версии rich держит ``uv.lock``: вывод программ от них зависит, поэтому после обновления rich ожидания надо сверить.
 """
 
 import io
 
 import pytest
 from registry import REGISTRY, Program
+from styles import rstripped, styles_by_text
 
-from termsnap import Line
+from termsnap import Indexed, Line, Rgb, Style
 
-BOX_START = set("╭│├╰┏┃┡┗┌└┐┘┤┬┴┼")
+VS16 = "\N{VARIATION SELECTOR-16}"  # селектор эмодзи: символ перед ним рисуется как цветной эмодзи в две клетки
+
+PROJECT = [program for program in REGISTRY if not program.external]
 
 
 def styled(lines: tuple[Line, ...]) -> bool:
@@ -19,29 +25,6 @@ def styled(lines: tuple[Line, ...]) -> bool:
         for line in lines
         for span in line.spans
     )
-
-
-def box_runs(lines: tuple[Line, ...]) -> list[list[Line]]:
-    """
-    Подряд идущие строки, которые начинаются с символа рамки: это одна рамка (таблица, панель).
-    """
-    runs: list[list[Line]] = []
-    current: list[Line] = []
-    for line in lines:
-        if line.text[:1] in BOX_START:
-            if current and line.text[:1] == "╭":  # верхний край следующей рамки без пустой строки между ними
-                runs.append(current)
-                current = []
-            current.append(line)
-        elif current:
-            runs.append(current)
-            current = []
-    if current:
-        runs.append(current)
-    return runs
-
-
-PROJECT = [program for program in REGISTRY if not program.external]
 
 
 @pytest.mark.parametrize("program", PROJECT, ids=lambda program: program.name)
@@ -55,61 +38,232 @@ def test_program_output_is_clean_and_styled(program: Program, captures):
         assert styled(capture.lines)
 
 
-@pytest.mark.parametrize("name", [p.name for p in PROJECT if p.name.startswith("rich_")])
-def test_rich_output_fits_the_requested_width(name: str, captures):
-    assert max(line.width for line in captures(name).lines) <= 100
+# --- rich_table: таблица с эмодзи, цветами столбцов и подписями ---
+
+RICH_TABLE = [
+    "            Результаты испытаний             ",
+    "╭───┬─────────────────┬──────────┬──────────╮",
+    "│ № │ Название        │  Статус  │ Время, с │",
+    "├───┼─────────────────┼──────────┼──────────┤",
+    "│ 1 │ Загрузка данных │    OK    │     0.42 │",
+    "├───┼─────────────────┼──────────┼──────────┤",
+    "│ 2 │ Обучение модели │ медленно │    12.80 │",
+    "├───┼─────────────────┼──────────┼──────────┤",
+    "│ 3 │ Проверка 🚀     │ ошибка ✗ │     3.05 │",  # эмодзи занимает две клетки: рамка не сдвигается
+    "├───┼─────────────────┼──────────┼──────────┤",
+    "│ 4 │ Отчёт ✅        │  готово  │     0.07 │",
+    "╰───┴─────────────────┴──────────┴──────────╯",
+    "               Данные условные               ",
+]
+
+#: Столбцы: № - бирюзовый, название - жирный пурпурный, время - зеленый; статус красится прямо в тексте ячейки.
+RICH_TABLE_STYLES = {
+    "Результаты испытаний": Style(italic=True),
+    "№": Style(bold=True),
+    "Название": Style(bold=True),
+    "1": Style(fg=Indexed(6)),
+    "Загрузка данных": Style(fg=Indexed(5), bold=True),
+    "OK": Style(fg=Indexed(2)),
+    "медленно": Style(fg=Indexed(3)),
+    "ошибка ✗": Style(fg=Indexed(1)),
+    "готово": Style(fg=Indexed(2)),
+    "12.80": Style(fg=Indexed(2)),
+    "3.05": Style(fg=Indexed(2), bold=True),  # жирный внутри ячейки поверх цвета столбца
+    "Данные условные": Style(dim=True, italic=True),
+}
 
 
-def test_rich_boxes_are_rectangles_even_with_emoji(captures):
-    for name in ("rich_table", "rich_panel_tree"):
-        runs = box_runs(captures(name).lines)
-        assert runs
-        for run_lines in runs:
-            assert len({line.width for line in run_lines}) == 1, (name, [line.text for line in run_lines])
-
-
-def test_rich_table_keeps_emoji_and_colours(captures):
+def test_rich_table_is_drawn_exactly_and_its_frame_is_a_rectangle_even_with_emoji(captures):
     capture = captures("rich_table")
-    assert "🚀" in capture.text
-    assert "✅" in capture.text
-    colours = {span.style.fg for line in capture.lines for span in line.spans if span.style.fg is not None}
-    assert len(colours) >= 4
+    assert [line.text for line in capture.lines] == RICH_TABLE
+    assert {line.width for line in capture.lines[1:12]} == {45}  # все строки рамки одной ширины в клетках
 
 
-def test_rich_progress_shows_only_final_state(captures):
-    lines = captures("rich_progress").lines
-    assert len(lines) == 3
-    assert lines[0].text.startswith("Скачивание")
-    assert "100%" in lines[0].text
-    assert "100%" in lines[1].text
-    assert lines[2].text == "Готово"
+def test_rich_table_cells_have_the_styles_of_their_columns(captures):
+    assert RICH_TABLE_STYLES.items() <= styles_by_text(captures("rich_table")).items()
+
+
+# --- rich_panel_tree: дерево в панели и панель по размеру текста ---
+
+RICH_PANEL_TREE = [
+    "╭─────────────────────── Структура ────────────────────────╮",
+    "│                                                          │",
+    "│  📁 проект                                               │",
+    "│  ├── 📁 src                                              │",
+    "│  │   ├── 🐍 main.py                                      │",
+    "│  │   └── 🐍 utils.py                                     │",
+    "│  ├── 📁 docs                                             │",
+    "│  │   ├── 📄 README.md                                    │",
+    "│  │   └── 🖼  схема.png                                    │",
+    "│  └── 🔒 .env                                             │",
+    "│                                                          │",
+    "╰─────────────────────── 3 каталога ───────────────────────╯",
+    "╭────────────────────────────────╮",
+    "│  ВНИМАНИЕ  Проверьте настройки │",
+    "╰────────────────────────────────╯",
+]
+
+
+def test_rich_panel_and_tree_are_drawn_exactly_with_straight_borders(captures):
+    capture = captures("rich_panel_tree")
+    assert [line.text for line in capture.lines] == RICH_PANEL_TREE
+    assert {line.width for line in capture.lines[:12]} == {60}  # большая панель: ширина задана программой
+    assert {line.width for line in capture.lines[12:]} == {34}  # малая подгоняется под текст
+
+
+def test_rich_panel_tree_has_coloured_names_and_a_warning_on_red(captures):
+    styles = styles_by_text(captures("rich_panel_tree"))
+    assert styles["Структура"] == Style(fg=Indexed(12), bold=True)
+    assert styles["проект"] == Style(fg=Indexed(4), bold=True)
+    assert styles["main.py"] == Style(fg=Indexed(2))
+    assert styles["README.md"] == Style(dim=True)
+    assert styles["ВНИМАНИЕ"] == Style(fg=Indexed(7), bg=Indexed(1), bold=True)
+
+
+# --- rich_progress и rich_live: перерисовка на месте оставляет только последний кадр ---
+
+
+def test_rich_progress_shows_only_the_final_state_not_every_frame(captures):
+    capture = captures("rich_progress")
+    assert [line.text for line in capture.lines] == [
+        "Скачивание ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 40/40",
+        "Обработка  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 40/40",
+        "Готово",
+    ]
+    styles = styles_by_text(capture)
+    assert styles["Скачивание"] == Style(fg=Indexed(4), bold=True)
+    assert styles["100%"] == Style(fg=Indexed(5))
+    assert styles["40/40"] == Style(fg=Indexed(2))
 
 
 def test_rich_live_shows_one_table_not_every_frame(captures):
-    lines = captures("rich_live").lines
-    assert sum("Нагрузка" in line.text for line in lines) == 1
-    assert sum("Шаг" in line.text for line in lines) == 1
-    assert "Шаг 5" in "\n".join(line.text for line in lines)
-    assert lines[-1].text == "Итог: пять обновлений"
+    assert [line.text for line in captures("rich_live").lines] == [
+        "        Шаг 5        ",
+        "┏━━━━━━━━┳━━━━━━━━━━┓",
+        "┃ Узел   ┃ Нагрузка ┃",
+        "┡━━━━━━━━╇━━━━━━━━━━┩",
+        "│ node-0 │      35% │",
+        "│ node-1 │      48% │",
+        "│ node-2 │      61% │",
+        "└────────┴──────────┘",
+        "Итог: пять обновлений",
+    ]
 
 
-def test_rich_gradient_is_truecolor(captures):
-    from termsnap import Rgb
+# --- rich_syntax: подсветка кода с номерами строк на фоне ---
 
-    colours = {span.style.fg for line in captures("rich_misc").lines for span in line.spans}
-    assert sum(isinstance(colour, Rgb) for colour in colours) >= 20
+RICH_SYNTAX = [
+    "   1 from dataclasses import dataclass",
+    "   2",
+    "   3",
+    "   4 @dataclass(frozen=True, slots=True)",
+    "   5 class Point:",
+    "   6     x: float",
+    "   7     y: float",
+    "   8",
+    '   9     def distance(self, other: "Point") -> float:',
+    '  10         """Расстояние до другой точки."""',
+    "  11         return ((self.x - other.x) ** 2 + (self.y - other.y) ** 2) ** 0.5",
+    "  12",
+    "  13",
+    "  14 print(Point(0, 0).distance(Point(3, 4)))  # 5.0",
+    "  15",
+    "from dataclasses import dataclass",  # второй блок: без номеров, на другом фоне
+    "x = [i for i in range(10)]",
+]
 
 
-def test_rich_syntax_has_background_and_line_numbers(captures):
-    lines = captures("rich_syntax").lines
-    assert lines[0].text.lstrip().startswith("1 from dataclasses")
-    assert any(span.style.bg is not None for line in lines for span in line.spans)
+def test_rich_syntax_is_numbered_highlighted_and_on_a_background(captures):
+    capture = captures("rich_syntax")
+    assert rstripped(capture) == RICH_SYNTAX
+    styles = styles_by_text(capture)
+    assert styles["def"] == Style(fg=Indexed(81), bg=Indexed(235))  # ключевое слово на фоне темы monokai
+    assert styles["return"] == Style(fg=Indexed(81), bg=Indexed(235))
+    assert {span.style.bg for span in capture.lines[15].spans} == {Indexed(255)}  # второй блок на светлом фоне
 
 
-def test_rich_traceback_shows_the_error_and_marks_the_line(captures):
-    text = captures("rich_traceback").text
-    assert "ZeroDivisionError: division by zero" in text
-    assert "return a / b" in text
+# --- rich_markdown ---
+
+RICH_MARKDOWN = [
+    "             Заголовок первого уровня",
+    "",
+    "Обычный абзац с жирным, курсивом, кодом и ссылкой.",
+    "",
+    "Список",
+    "",
+    " • первый пункт",
+    " • второй пункт",
+    "    • вложенный пункт",
+    "",
+    " 1 нумерованный",
+    " 2 список",
+    "",
+    "▌ Цитата, которая занимает несколько слов.",
+    "",
+    "",
+    " def hello(name: str) -> str:",
+    '     return f"Привет, {name}!"',
+    "",
+    "",
+    "-" * 50,
+    "",
+]
+
+
+def test_rich_markdown_has_headings_lists_quote_code_and_a_rule(captures):
+    capture = captures("rich_markdown")
+    assert rstripped(capture) == RICH_MARKDOWN
+    styles = styles_by_text(capture)
+    assert styles["Заголовок первого уровня"] == Style(bold=True, underline=True)
+    assert styles["жирным"] == Style(bold=True)
+    assert styles["курсивом"] == Style(italic=True)
+    assert styles["кодом"] == Style(fg=Indexed(6), bg=Indexed(0), bold=True)
+    assert styles["ссылкой"] == Style(fg=Indexed(4), underline=True)
+    assert styles["def"].bg == Indexed(235)  # блок кода на своем фоне
+
+
+# --- rich_misc: градиент, атрибуты, гиперссылка, колонки, эмодзи и иероглифы ---
+
+RICH_MISC = [
+    "───────────────────────────────────────── Градиент и стили ─────────────────────────────────────────",
+    "█" * 60,
+    "жирный курсив подчёркнутый зачёркнутый тусклый обратный",
+    "ссылка с гиперссылкой OSC 8 и  фон",  # сама ссылка (OSC 8) в текст не попадает
+    "─" * 100,
+    "альфа            бета          гамма           дельта             эпсилон              дзета",
+    f"Эмодзи: 🚀 ✅ ❌ ⚠{VS16} 🐍  Иероглифы: 日本語 中文  Рамки: ┌─┬─┐│ │ │└─┴─┘",
+]
+
+
+def test_rich_misc_text_is_drawn_exactly(captures):
+    assert rstripped(captures("rich_misc")) == RICH_MISC
+
+
+def test_rich_gradient_keeps_each_of_its_sixty_truecolor_steps(captures):
+    gradient = captures("rich_misc").lines[1]
+    colours = [span.style.fg for span in gradient.spans]
+    assert len(colours) == 60
+    assert colours[0] == Rgb(255, 0, 128)  # шаг 0: красный максимален, зеленый минимален
+    assert colours[1] == Rgb(251, 4, 128)
+    assert colours[-1] == Rgb(19, 236, 128)  # шаг 59: 255 - 59 * 4 и 59 * 4
+
+
+def test_rich_misc_attributes_are_each_on_their_own_word(captures):
+    styles = styles_by_text(captures("rich_misc"))
+    assert styles["жирный"] == Style(bold=True)
+    assert styles["курсив"] == Style(italic=True)
+    assert styles["подчёркнутый"] == Style(underline=True)
+    assert styles["зачёркнутый"] == Style(strike=True)
+    assert styles["тусклый"] == Style(dim=True)
+    assert styles["обратный"] == Style(inverse=True)
+    assert styles["фон"] == Style(bg=Indexed(4))
+
+
+def test_rich_traceback_shows_the_error_and_the_failing_line(captures):
+    # пути к файлам зависят от машины, поэтому строка с ошибкой и код проверяются по тексту
+    lines = [line.text.rstrip() for line in captures("rich_traceback").lines]
+    assert "ZeroDivisionError: division by zero" in lines
+    assert any("❱  5 │   return a / b" in line for line in lines)  # стрелка указывает на строку, где упало
 
 
 # - картинки -

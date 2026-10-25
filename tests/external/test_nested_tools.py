@@ -1,6 +1,6 @@
 """
 Чужие команды на близких к жизни сценариях: Node.js, pytest, ruff и git печатают цветной вывод, возврат каретки,
-перерисовку строки и заголовки окна. Состав программ - ``examples/registry.py`` (записи с ``external=True``).
+перерисовку строки и заголовки окна. Состав программ - ``tests/registry.py`` (записи с ``external=True``).
 """
 
 import io
@@ -9,7 +9,7 @@ import sys
 import pytest
 from registry import REGISTRY, Program
 
-from termsnap import Line, run
+from termsnap import Indexed, Line, Rgb, Style, run
 
 NESTED = [program for program in REGISTRY if program.external]
 
@@ -33,12 +33,41 @@ def test_program_output_is_clean_and_styled(program: Program, captures):
         assert styled(capture.lines)
 
 
+NODE_ANSI = [
+    " " * 48,  # 48 клеток с фоном из палитры 256 цветов
+    " " * 48,  # 48 клеток с фоном в 24-битном цвете
+    "Готово",  # шкала из одиннадцати кадров перерисована на месте (возврат каретки), последний кадр стерт
+    "жирный подчёркнутый красный курсив жёлтый серый ъяркие",
+    "скрытый курсор",  # заголовок окна (OSC), скрытие и показ курсора в текст не попадают
+]
+
+
 def test_node_progress_is_overwritten_and_title_sequences_are_dropped(captures):
-    text = captures("node_ansi").text
-    assert "Готово" in text
-    assert "[#" not in text
-    assert "заголовок окна" not in text
-    assert "скрытый курсор" in text
+    capture = captures("node_ansi")
+    assert [line.text for line in capture.lines] == NODE_ANSI
+
+
+def test_node_backgrounds_keep_each_of_their_forty_eight_colours(captures):
+    lines = captures("node_ansi").lines
+    palette = [span.style.bg for span in lines[0].spans]
+    truecolor = [span.style.bg for span in lines[1].spans]
+    assert (len(palette), palette[0], palette[1], palette[-1]) == (48, Indexed(16), Indexed(20), Indexed(204))
+    assert (len(truecolor), truecolor[0], truecolor[1], truecolor[-1]) == (
+        48,
+        Rgb(0, 255, 160),
+        Rgb(5, 250, 160),
+        Rgb(235, 20, 160),
+    )
+
+
+def test_node_text_attributes_and_bright_colours(captures):
+    styles = {span.text.strip(): span.style for span in captures("node_ansi").lines[3].spans if span.text.strip()}
+    assert styles == {
+        "жирный подчёркнутый красный": Style(fg=Indexed(1), bold=True, underline=True),
+        "курсив жёлтый": Style(fg=Indexed(3), italic=True),
+        "серый": Style(fg=Indexed(8)),  # код 90 - яркий черный
+        "ъяркие": Style(fg=Indexed(12), bg=Indexed(11)),  # коды 94 и 103
+    }
 
 
 def test_node_inspect_has_coloured_values(captures):

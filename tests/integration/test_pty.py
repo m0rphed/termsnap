@@ -3,14 +3,16 @@ import sys
 
 import pytest
 from registry import PTY_REGISTRY, REGISTRY, Program
+from styles import styles_by_text
 
 pytest.importorskip("pyte")
 if sys.platform == "win32":
     pytest.importorskip("winpty")
 
-from termsnap import Capture, Indexed, PtyBackend, Rgb, RunTimeout, Style, run
+from termsnap import Capture, Indexed, PtyBackend, Rgb, RunTimeout, Span, Style, run
 
 PTY = PtyBackend()
+VS16 = "️"  # селектор эмодзи
 CAPTURES: dict[str, Capture] = {}
 
 
@@ -82,43 +84,87 @@ def test_color_can_be_turned_off():
     assert not any(span.style.bg is not None for line in capture.lines for span in line.spans)
 
 
+RICH_NATIVE = [
+    "терминал: True, цвета: truecolor, ширина: 100",  # termsnap объявляет терминал с 24-битным цветом шириной 100
+    "          Результаты           ",
+    "┏━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━┓",
+    "┃ Тест   ┃ Статус  ┃ Время, с ┃",
+    "┡━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━┩",
+    "│ парсер │  ✅ ok  │     0.12 │",
+    "│ рендер │ ❌ fail │     1.40 │",
+    f"│ шрифты │ ⚠{VS16} warn │     0.07 │",  # ⚠ с селектором эмодзи занимает две клетки, как ✅ и ❌
+    "└────────┴─────────┴──────────┘",
+    "╭" + "─" * 98 + "╮",
+    "│ ВНИМАНИЕ Проверьте настройки" + " " * 69 + "│",
+    "╰" + "─" * 98 + "╯",
+]
+
+
 def test_plain_rich_console_needs_no_workarounds_in_a_pty():
+    # rich без настроек сам видит терминал: цвета, ширину и эмодзи определяет по нему, таблица и панель ровные
     capture = captured("rich_native")
-    assert capture.lines[0].text.startswith("терминал: True, цвета: ")
-    assert len(colours(capture)) >= 3
-    assert "✅ ok" in capture.text
-    assert "⚠️ warn" in capture.text
+    assert [line.text for line in capture.lines] == RICH_NATIVE
+    assert {line.width for line in capture.lines[2:9]} == {31}
+    assert {line.width for line in capture.lines[9:]} == {100}
 
 
-def test_plain_rich_table_and_panel_are_rectangles():
-    blocks: list[list[int]] = []
-    for line in captured("rich_native").lines:
-        if line.text[:1] in "┏┃┡│└╭╰":
-            if not blocks or line.text[:1] in "┏╭":
-                blocks.append([])
-            blocks[-1].append(line.width)
-    assert len(blocks) == 2  # таблица и панель
-    assert all(len(set(widths)) == 1 for widths in blocks), blocks
+def test_plain_rich_console_colours_in_a_pty():
+    styles = styles_by_text(captured("rich_native"))
+    assert styles["Тест"] == Style(bold=True)
+    assert styles["✅ ok"] == Style(fg=Indexed(2))
+    assert styles["❌ fail"] == Style(fg=Indexed(1))
+    assert styles["0.12"] == Style(dim=True)
+    assert styles["ВНИМАНИЕ"] == Style(fg=Indexed(1), bold=True)
+
+
+FULL_SCREEN = [
+    " top - 12:00:00 up 3 days, 2 users ",
+    "",
+    "CPU  |||||||| 40%",
+    "MEM  |||||||||||| 60%",
+    "",
+    "         Привет, терминал",
+    "",
+    "новая строка",  # на этом месте была строка длиннее: ее стерли перед записью новой
+    *[""] * 21,  # строки 9-29 не тронуты
+    " q: выход ",
+]
 
 
 def test_full_screen_program_leaves_exactly_the_drawn_screen():
+    # программа рисует экран абсолютными позициями курсора: разбор потока по строкам такой вывод не прочитал бы
+    capture = captured("full_screen")
+    assert [line.text for line in capture.lines] == FULL_SCREEN
+
+
+def test_full_screen_program_keeps_the_styles_of_what_it_drew():
     lines = captured("full_screen").lines
-    assert len(lines) == 30  # последняя строка экрана занята нижней полосой
-    assert lines[0].text.strip() == "top - 12:00:00 up 3 days, 2 users"
-    assert lines[0].spans[0].style.inverse
-    assert lines[2].text.startswith("CPU  ||||||||")
-    assert lines[5].text == " " * 9 + "Привет, терминал"
-    assert lines[7].text == "новая строка"
-    assert lines[29].text.strip() == "q: выход"
-    assert lines[29].spans[0].style.bg == Indexed(4)
-    assert all(line.text == "" for line in lines[8:29])
+    assert lines[0].spans == (Span(" top - 12:00:00 up 3 days, 2 users ", Style(inverse=True)),)  # строка состояния
+    assert lines[2].spans == (Span("CPU  "), Span("||||||||", Style(fg=Indexed(2))), Span(" 40%"))  # зеленая шкала
+    assert lines[3].spans == (Span("MEM  "), Span("||||||||||||", Style(fg=Indexed(3))), Span(" 60%"))  # желтая
+    assert lines[5].spans == (Span("         "), Span("Привет, терминал", Style(fg=Indexed(6), bold=True)))
+    assert lines[29].spans == (Span(" q: выход ", Style(fg=Indexed(15), bg=Indexed(4))),)  # белое на синем
 
 
 def test_output_longer_than_the_screen_is_not_lost():
+    # 120 строк в экране из 30: верхние уходят за его край, но остаются в результате
     lines = captured("long_output").lines
     assert len(lines) == 120
-    assert lines[0].text == "строка 001: x"
-    assert lines[119].text.startswith("строка 120")
+    assert [line.text.rstrip() for line in lines[:8]] == [
+        "строка 001: x",
+        "строка 002: xx",
+        "строка 003: xxx",
+        "строка 004: xxxx",
+        "строка 005: xxxxx",
+        "строка 006: xxxxxx",
+        "строка 007:",  # число икс - остаток от деления на 7
+        "строка 008: x",
+    ]
+    assert lines[-1].text == "строка 120: x"
+    # цвет меняется каждые десять строк: 1-9 красный, 10-19 зеленый, затем дальше по кругу из шести цветов
+    assert [lines[number - 1].spans[0].style.fg for number in (1, 9, 10, 19, 20, 60, 120)] == [
+        Indexed(index) for index in (1, 1, 2, 2, 3, 1, 1)
+    ]
 
 
 PROJECT = [program for program in REGISTRY if not program.external]
@@ -150,9 +196,8 @@ def test_pty_and_pipe_use_the_same_colours_for_rich_table():
 
 
 def test_rich_misc_keeps_emoji_with_variation_selector():
-    text = captured("rich_misc").text
-    assert "⚠️" in text
-    assert "Иероглифы" in text
+    last_line = captured("rich_misc").lines[-1].text
+    assert last_line == f"Эмодзи: 🚀 ✅ ❌ ⚠{VS16} 🐍  Иероглифы: 日本語 中文  Рамки: ┌─┬─┐│ │ │└─┴─┘"
 
 
 @pytest.mark.parametrize("name", [p.name for p in PTY_REGISTRY])

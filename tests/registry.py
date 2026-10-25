@@ -1,8 +1,9 @@
 """
-Набор настоящих программ с нетривиальным цветным выводом: на нем проверяются разбор ANSI и рисование в PNG.
+Программы, на которых проверяются запуск, разбор ANSI и рисование в PNG.
 
-Каждая запись - команда и каталог запуска. Программы лежат в ``programs`` (скрипты rich и Node.js, образцы для pytest и
-ruff); если нужного инструмента нет в системе, запись пропускается (``available``).
+Каждая запись - команда запуска и то, что нужно знать, чтобы ее проверить. Скрипты лежат в ``tests/programs``;
+ожидаемый вывод каждой программы записан рядом с ее тестами, а не здесь. Если нужной внешней программы нет в системе,
+запись недоступна (``available``).
 """
 
 import os
@@ -72,7 +73,11 @@ REGISTRY = [
     Program("node_ansi", ("node", _script("node_ansi.js")), tool="node", external=True),
     Program(
         "pytest_failure",
-        (PY, "-m", "pytest", _script("sample_failing_test.py"), "--color=yes", "-p", "no:cacheprovider", "-q"),
+        # confcutdir: вложенный pytest не должен подхватывать conftest.py самих тестов проекта
+        (
+            *(PY, "-m", "pytest", _script("failing_cases.py")),
+            *("--confcutdir", str(PROGRAMS), "--color=yes", "-p", "no:cacheprovider", "-q"),
+        ),
         expect_failure=True,
         external=True,
     ),

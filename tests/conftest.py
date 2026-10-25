@@ -18,6 +18,9 @@ from termsnap import Capture, run
 
 LEVELS = ("unit", "integration", "external")
 
+#: Программы, которые запускают тесты, - не тесты: pytest их не собирает (``failing_cases.py`` падает намеренно).
+collect_ignore_glob = ["programs/*"]
+
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:

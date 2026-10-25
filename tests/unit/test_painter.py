@@ -1,12 +1,13 @@
 """
 Как фрагменты строки превращаются в пиксели: фон, цвета, подчеркивание, жирность, стыки рамок.
 
-Шрифт - встроенный в Pillow (``bundled_fonts``), поэтому картинки одинаковы на любой машине. Размер шрифта 8, масштаб 1,
-поля 0: клетка получается 8 пикселей в ширину и 13 в высоту, базовая линия лежит в строке 9 (подъем 8, спуск 2).
+Шрифт - встроенный в Pillow (``bundled_fonts``). Размер шрифта 8, масштаб 1, поля 0: строка получается 13 пикселей
+в высоту, базовая линия лежит в строке 9 (подъем 8, спуск 2). Ширина клетки зависит от движка раскладки текста в сборке
+Pillow (8 пикселей без raqm, 7 с ним), поэтому тесты ее не прошивают, а берут из раскладки.
 """
 
 import pytest
-from picture import art, picture
+from picture import picture
 
 pytest.importorskip("PIL")
 
@@ -17,7 +18,6 @@ from termsnap.png import FontSet, render_image
 from termsnap.png.layout import Layout
 from termsnap.png.text import load_font
 
-CELL, ROW = 8, 13
 GREY = Rgb(200, 200, 200)
 BACKGROUND = DARK.background.channels
 LEGEND = {".": BACKGROUND, "#": GREY.channels}
@@ -37,24 +37,20 @@ def colors(image: Image.Image) -> list[tuple[int, tuple[int, int, int]]]:
     return image.convert("RGB").getcolors(maxcolors=image.width * image.height) or []
 
 
+def column(image: Image.Image, x: int) -> str:
+    """
+    Один столбец картинки сверху вниз буквами легенды: как по высоте строки расположены линии.
+    """
+    return picture(image, LEGEND, box=(x, 0, x + 1, image.height)).replace(chr(10), "")
+
+
 def test_underline_is_two_pixels_below_the_baseline_and_strike_through_is_above_it(bundled_fonts: FontSet):
-    # два пробела: слева с подчеркиванием, справа с зачеркиванием; базовая линия в строке 9
+    # две клетки: слева с подчеркиванием, справа с зачеркиванием; столбец каждой клетки сверху вниз (13 строк)
     spans = [Span(" ", Style(fg=GREY, underline=True)), Span(" ", Style(fg=GREY, strike=True))]
-    assert picture(paint(spans, bundled_fonts), LEGEND) == art("""
-        ................
-        ................
-        ................
-        ................
-        ................
-        ................
-        ................
-        ........########
-        ................
-        ................
-        ................
-        ########........
-        ................
-    """)
+    image = paint(spans, bundled_fonts)
+    second_cell = round(layout_of(bundled_fonts, columns=2).column_x(1))
+    assert column(image, 0) == "...........#."  # подчеркивание в строке 11: на два пикселя ниже базовой линии 9
+    assert column(image, second_cell) == ".......#....."  # зачеркивание в строке 7: на два выше нее
 
 
 def test_underline_covers_every_cell_of_the_span_without_gaps(bundled_fonts: FontSet):
@@ -76,19 +72,20 @@ def test_a_span_background_fills_its_cells_and_stops_at_their_edge(bundled_fonts
 def test_inverse_swaps_the_colours_of_the_style(bundled_fonts: FontSet):
     red, blue = Rgb(200, 0, 0), Rgb(0, 0, 200)
     image = paint([Span(" ", Style(fg=red, bg=blue, inverse=True))], bundled_fonts)
-    assert colors(image) == [(CELL * ROW, red.channels)]  # клетка залита цветом текста, текст был бы синим
+    # клетка залита цветом текста, а текст был бы синим
+    assert colors(image) == [(image.width * image.height, red.channels)]
 
 
 def test_inverse_without_colours_uses_the_theme_text_colour_for_the_background(bundled_fonts: FontSet):
     image = paint([Span(" ", Style(inverse=True))], bundled_fonts)
-    assert colors(image) == [(CELL * ROW, DARK.foreground.channels)]
+    assert colors(image) == [(image.width * image.height, DARK.foreground.channels)]
 
 
 def test_dim_text_is_mixed_with_the_background_by_sixty_percent(bundled_fonts: FontSet):
     # сплошной блок рисует сама библиотека, без сглаживания: цвет блока 0.6 * 200 + 0.4 * 0 = 120
     black = Rgb(0, 0, 0)
     image = paint([Span("█", Style(fg=GREY, bg=black, dim=True))], bundled_fonts)
-    assert colors(image) == [(CELL * ROW, (120, 120, 120))]
+    assert colors(image) == [(image.width * image.height, (120, 120, 120))]
 
 
 def test_text_is_drawn_in_the_colour_of_its_style_and_only_inside_its_cell(bundled_fonts: FontSet):

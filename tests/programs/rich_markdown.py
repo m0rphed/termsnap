@@ -23,4 +23,4 @@ def hello(name: str) -> str:
 
 ---
 """
-make().print(Markdown(TEXT))
+make(width=50).print(Markdown(TEXT))

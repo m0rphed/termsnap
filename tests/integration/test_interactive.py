@@ -24,6 +24,7 @@ from termsnap import (
     RunTimeout,
     Snapshot,
     Span,
+    Style,
     run,
 )
 
@@ -45,10 +46,6 @@ def session(name: str) -> Capture:
     return CAPTURES[name]
 
 
-def span(capture: Capture, prefix: str) -> Span:
-    return next(s for line in capture.lines for s in line.spans if s.text.lstrip().startswith(prefix))
-
-
 def texts(capture: Capture) -> list[str]:
     return [line.text for line in capture.lines]
 
@@ -57,17 +54,6 @@ def tick(capture: Capture) -> int:
     match = re.search(r"tick\s+(\d+)", capture.lines[0].text)
     assert match, capture.lines[0].text
     return int(match.group(1))
-
-
-def names(capture: Capture) -> list[str]:
-    """
-    Названия процессов на экране монитора сверху вниз.
-    """
-    return [line.text[2:].split()[0] for line in capture.lines[3:9]]
-
-
-def selected(capture: Capture) -> str:
-    return next(line.text[2:].split()[0] for line in capture.lines if line.text.startswith(">"))
 
 
 # --- REPL с вводом ---
@@ -93,12 +79,22 @@ def test_scripted_session_of_a_tiny_repl_keeps_the_order_of_output():
 
 
 def test_scripted_session_has_styles_of_the_prompt_and_replies():
-    capture = session("mini_repl")
-    assert span(capture, ">>").style.fg == Indexed(2)
-    assert span(capture, ">>").style.bold
-    assert span(capture, "5").style.fg == Indexed(6)
-    assert span(capture, "неизвестная").style.fg == Indexed(1)
-    assert span(capture, "mini-repl").style.dim
+    # приглашение - жирный зеленый, ответ add - бирюзовый, ошибки - красные, заголовок - тусклый; ввод без оформления
+    prompt = Span(">>", Style(fg=Indexed(2), bold=True))
+    error = Style(fg=Indexed(1))
+    assert [line.spans for line in session("mini_repl").lines] == [
+        (Span("mini-repl: add a b | slow | fail | exit", Style(dim=True)),),
+        (prompt, Span(" add 2 3")),
+        (Span("5", Style(fg=Indexed(6))),),
+        (prompt, Span(" slow")),
+        (Span("медленно, но готово"),),
+        (prompt, Span(" bogus")),
+        (Span("неизвестная команда: bogus", error),),
+        (prompt, Span(" fail")),
+        (Span("ошибка: команда не удалась", error),),
+        (prompt, Span(" exit")),
+        (Span("пока"),),
+    ]
 
 
 def test_input_without_a_prompt_pattern_goes_by_silence():
@@ -130,10 +126,48 @@ def test_terminal_answers_the_cursor_position_request_of_a_program():
         "reply = os.read(0, 32); sys.stdout.write(chr(13) + chr(10) + repr(reply)); sys.stdout.flush()"
     )
     capture = run([sys.executable, "-c", code], backend=PTY, timeout=30)
-    assert texts(capture) == ["ab", "b'" + chr(92) + "x1b[1;3R'"]  # столбец 3: после двух напечатанных букв
+    # программа печатает то, что прочитала в ответ: позицию курсора "строка 1, столбец 3" (после двух букв)
+    assert texts(capture) == ["ab", repr(b"\x1b[1;3R")]
 
 
 # --- долгая программа: когда снимать экран ---
+#
+# ``live_monitor.py`` рисует таблицу процессов (данные выдуманы) и пять раз в секунду обновляет счетчик ``tick`` в
+# первой строке; ``s`` меняет сортировку, стрелки двигают выбор. Все, кроме первой строки, на экране известно точно.
+
+
+def monitor_screen(*rows: str) -> list[str]:
+    """
+    Экран монитора без первой строки (в ней меняющийся счетчик): пустая строка, заголовок таблицы, шесть процессов,
+    пустая строка и подсказка по клавишам.
+    """
+    return ["", "  NAME        CPU%   MEM%", *rows, "", "q quit   s sort   up/down select"]
+
+
+BY_CPU_FIRST_SELECTED = monitor_screen(
+    "> ffmpeg      77.9    2.2",
+    "  python      48.2    3.4",
+    "  node        31.0    6.7",
+    "  postgres    12.5    8.1",
+    "  nginx        1.2    0.9",
+    "  redis        0.8    1.5",
+)
+BY_NAME_THIRD_SELECTED = monitor_screen(
+    "  ffmpeg      77.9    2.2",
+    "  nginx        1.2    0.9",
+    "> node        31.0    6.7",
+    "  postgres    12.5    8.1",
+    "  python      48.2    3.4",
+    "  redis        0.8    1.5",
+)
+BY_CPU_LAST_SELECTED = monitor_screen(
+    "  ffmpeg      77.9    2.2",
+    "  python      48.2    3.4",
+    "  node        31.0    6.7",
+    "  postgres    12.5    8.1",
+    "  nginx        1.2    0.9",
+    "> redis        0.8    1.5",
+)
 
 
 def test_without_a_snapshot_a_program_that_never_ends_is_a_timeout():
@@ -148,19 +182,25 @@ def test_snapshot_after_takes_the_screen_and_stops_the_program():
     assert capture.ok  # остановили мы сами, код возврата ничего не значит
     assert capture.duration < 10
     assert 2 <= tick(capture) <= 8  # кадр каждые 0.2 с, около секунды после запуска
-    assert names(capture) == ["ffmpeg", "python", "node", "postgres", "nginx", "redis"]
-    assert selected(capture) == "ffmpeg"
+    assert texts(capture)[1:] == BY_CPU_FIRST_SELECTED
 
 
 def test_snapshot_shows_the_screen_with_its_styles():
     capture = run(MONITOR, backend=PTY, snapshot=Snapshot(after=0.5), timeout=30)
-    header = capture.lines[0].spans[0]
-    assert header.style.inverse
-    assert header.style.bold
-    assert span(capture, "77.9").style.fg == Indexed(1)  # больше 40% - красный
-    assert span(capture, "12.5").style.fg == Indexed(3)
-    assert span(capture, "0.8").style.fg == Indexed(2)
-    assert any(s.style.inverse for s in capture.lines[3].spans)  # выбранная строка
+    header = capture.lines[0].spans
+    assert [span.style for span in header] == [Style(bold=True, inverse=True)]  # вся первая строка одним фрагментом
+    assert [span.style for span in capture.lines[2].spans] == [Style(bold=True)]  # заголовок таблицы жирный
+    # процент CPU красный выше 40, желтый выше 10, иначе зеленый; выбранная строка целиком обращена
+    cpu_colours = {line.text[2:].split()[0]: line.spans[1].style for line in capture.lines[3:9]}
+    assert cpu_colours == {
+        "ffmpeg": Style(fg=Indexed(1), inverse=True),
+        "python": Style(fg=Indexed(1)),
+        "node": Style(fg=Indexed(3)),
+        "postgres": Style(fg=Indexed(3)),
+        "nginx": Style(fg=Indexed(2)),
+        "redis": Style(fg=Indexed(2)),
+    }
+    assert capture.lines[10].spans == (Span("q quit   s sort   up/down select", Style(dim=True)),)
 
 
 def test_snapshot_when_waits_for_the_text_on_the_screen():
@@ -176,17 +216,18 @@ def test_snapshot_when_that_never_happens_is_a_timeout_with_what_was_seen():
 
 
 def test_keys_change_what_the_program_shows():
+    # s - сортировка по имени; затем два раза вниз от первой строки: выбрана третья (node)
     steps = (Keys("s"), Pause(0.4), Key.DOWN, Pause(0.4), Key.DOWN, Pause(0.4))
     capture = run(MONITOR, backend=PTY, input=steps, settle=0, snapshot=Snapshot(after=0.5), timeout=30)
-    assert "sort: name" in capture.lines[0].text  # s переключила сортировку
-    assert names(capture) == ["ffmpeg", "nginx", "node", "postgres", "python", "redis"]
-    assert selected(capture) == "node"  # дважды вниз от первой строки
+    assert "sort: name" in capture.lines[0].text
+    assert texts(capture)[1:] == BY_NAME_THIRD_SELECTED
 
 
 def test_keys_stop_at_the_ends_of_the_list():
+    # вверх от первой строки не уходим, вниз - только до последней (redis)
     steps = (Key.UP, Pause(0.3), *([Key.DOWN, Pause(0.3)] * 8))
     capture = run(MONITOR, backend=PTY, input=steps, settle=0, snapshot=Snapshot(after=0.4), timeout=30)
-    assert selected(capture) == names(capture)[-1] == "redis"  # вверх от первой строки не ушли, вниз - до последней
+    assert texts(capture)[1:] == BY_CPU_LAST_SELECTED
 
 
 def test_program_that_quits_on_its_own_is_not_stopped():
