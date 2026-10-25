@@ -9,12 +9,13 @@
 каталогов - ошибка сбора, а не молчаливая "ничья": любой тест должен иметь уровень.
 """
 
+import sys
 from collections.abc import Callable
 
 import pytest
-from registry import ALL_PROGRAMS
+from registry import ALL_PROGRAMS, require
 
-from termsnap import Capture, run
+from termsnap import Capture, PtyBackend, run
 
 LEVELS = ("unit", "integration", "external")
 
@@ -40,9 +41,29 @@ def captures() -> Callable[[str], Capture]:
     def get(name: str) -> Capture:
         if name not in cache:
             program = next(p for p in ALL_PROGRAMS if p.name == name)
-            if not program.available:
-                pytest.skip(f"нет программы {program.tool}")
-            cache[name] = run(program.argv, timeout=60)
+            require(program)
+            cache[name] = run(program.argv, timeout=60, **program.options)
+        return cache[name]
+
+    return get
+
+
+@pytest.fixture(scope="session")
+def pty_captures() -> Callable[[str], Capture]:
+    """
+    То же, что ``captures``, но в псевдотерминале: так запускаются программы с вводом и снимками экрана.
+    """
+    pytest.importorskip("pyte")
+    if sys.platform == "win32":
+        pytest.importorskip("winpty")
+    backend = PtyBackend()
+    cache: dict[str, Capture] = {}
+
+    def get(name: str) -> Capture:
+        if name not in cache:
+            program = next(p for p in ALL_PROGRAMS if p.name == name)
+            require(program)
+            cache[name] = run(program.argv, backend=backend, timeout=120, **program.options)
         return cache[name]
 
     return get

@@ -172,8 +172,6 @@ PROJECT = [program for program in REGISTRY if not program.external]
 
 @pytest.mark.parametrize("item", PROJECT, ids=lambda item: item.name)
 def test_project_programs_run_in_a_pty_and_leave_no_escape_sequences(item: Program):
-    if not item.available:
-        pytest.skip(f"нет программы {item.tool}")
     capture = captured(item.name)
     assert (capture.returncode != 0) is item.expect_failure, item.name
     assert capture.lines, item.name
@@ -185,8 +183,6 @@ def test_project_programs_run_in_a_pty_and_leave_no_escape_sequences(item: Progr
     ["rich_table", "rich_panel_tree", "rich_syntax", "rich_traceback", "rich_progress", "rich_live"],
 )
 def test_pty_and_pipe_agree_on_programs_that_do_not_depend_on_the_terminal(name: str):
-    if not program(name).available:
-        pytest.skip("нет программы")
     piped = run(program(name).argv, timeout=60)
     assert [line.text.rstrip() for line in captured(name).lines] == [line.text.rstrip() for line in piped.lines]
 

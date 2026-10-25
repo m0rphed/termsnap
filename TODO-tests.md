@@ -77,8 +77,7 @@
 - [x] Вложенный pytest (`pytest_failure`) изолирован от `conftest.py` проекта (`--confcutdir`)
 - [x] Прогон в Linux (WSL) показал, что ширина клетки встроенного шрифта Pillow зависит от движка раскладки (8 пикселей
   в Windows, 7 с raqm в Linux); тесты `Painter` берут ширину из раскладки и прошивают только высоту
-- [ ] Остались проверки "по частям", потому что вывод зависит от версии чужой программы: `node_inspect`,
-  `pytest_failure`, `ruff_diagnostics` - решается в пункте 4 (зафиксированные версии)
+- [x] Проверки "по частям" у `node_inspect`, `pytest_failure`, `ruff_diagnostics` заменены целыми выводами (пункт 4)
 - [ ] Общие помощники начаты (`tests/styles.py`, `tests/picture.py`); остальные дубли (`rgb()`, `texts()`, `python()`,
   `ESC`, `VS16`) слить в пункте 6
 
@@ -88,13 +87,27 @@
 Предложение: IPython, rich, ruff, pytest как зависимости группы `external` в `pyproject.toml` (версии держит `uv.lock`),
 запуск через `uv run`, на CI они ставятся шагом `uv sync`, во время тестов сети нет.
 
-- [ ] Группа зависимостей `external` и запуск IPython из окружения проекта вместо `uvx`
-- [ ] Версии в ожиданиях (`"In [5]: exit"`) привязаны к зафиксированной версии IPython; в README записано, как обновлять
-- [ ] `top` и `htop` на CI: Linux (procps, htop), macOS (`top` есть, `htop` через brew или явно не нужен), Windows (нет - явно)
-- [ ] Таблица "что на какой ОС запускается" в README и в коде (одно место, а не россыпь `available`/`posix_only`/`skipif`)
-- [ ] Пара тестов на нажатия клавиш (стрелки, Ctrl+C, Tab, Esc) вне IPython: на маленькой программе с `termios`/raw режимом
-- [ ] Вложенные инструменты (`pytest_failure`, `ruff_diagnostics`, `git_log`): либо external с версией, либо заменить
-  программой, печатающей заранее известный вывод
+- [x] Группа `external` в `pyproject.toml` (IPython; dev ее включает), IPython запускается как `python -m IPython` из
+  окружения проекта; история в памяти, `IPYTHONDIR` во временном каталоге, подсказки дня выключены; `uvx` не нужен
+- [x] Версии: `tests/pins.py` (ipython, prompt_toolkit, pygments, pytest, ruff, rich) и `tests/external/test_pins.py`
+  (установленные версии и `uv.lock` совпадают с ними, сообщение объясняет, как обновлять); в README описан порядок
+- [x] Сети во время тестов нет: `ci/run.py test` ставит `UV_OFFLINE=1`
+- [x] `top`, `htop`, `man` на ОС: Linux - все три, macOS - `top` и `man`, Windows - ничего; ставит `system-deps`
+  (`man-db`, `groff-base`, `less`, `git` добавлены, `git` теперь есть и в Docker-образе). macOS не проверена: ее
+  задача в CI идет только после слияния
+- [x] Одно место "что на какой ОС": `Program.absent` в `tests/registry.py` (причины), `require()` (исключена - skip с
+  причиной, обязательна и нет - ошибка), `support_table()` (таблица в README, `tests/unit/test_documentation.py`
+  сверяет); тесты правил - `tests/unit/test_registry.py`
+- [x] Нажатия клавиш вне IPython: `tests/programs/key_reporter.py` (сырой режим, termios и режим консоли Windows) и
+  `tests/integration/test_keys.py` (22 клавиши и сочетания, Ctrl+C как байт); во внешних - страница `man` в pager
+  (Page Down, поиск, выход по `q`)
+- [x] Вложенные инструменты: `pytest_failure` и `ruff_diagnostics` сверяются целиком (запуск из `tests/programs` с
+  `pytest.ini` и `--isolated`, пути не зависят от машины; время и длина линий-баннеров нормируются), `git_log` строит
+  свой репозиторий с заданными датами (`git_history.py`, хеши одинаковы в Windows и Debian), `node_inspect` без
+  трассировки и таблицы (они зависят от версии и пути)
+- [x] Найдено при переносе: pytest печатает линии баннеров на знак короче в Windows; ConPTY переписывает яркие цвета
+  как жирные обычные (поэтому у номера в приглашении IPython допустимы два варианта цвета); в `test_dict_diff`
+  порядок строк различий зависел от хеширования строк - тест заменен на сравнение списков
 
 ## 5. Никаких тихих скипов
 

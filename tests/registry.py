@@ -2,16 +2,24 @@
 Программы, на которых проверяются запуск, разбор ANSI и рисование в PNG.
 
 Каждая запись - команда запуска и то, что нужно знать, чтобы ее проверить. Скрипты лежат в ``tests/programs``;
-ожидаемый вывод каждой программы записан рядом с ее тестами, а не здесь. Если нужной внешней программы нет в системе,
-запись недоступна (``available``).
+ожидаемый вывод каждой программы записан рядом с ее тестами, а не здесь.
+
+Чужие программы делятся на две части. Python-пакеты (IPython, pytest, ruff, rich) берутся из окружения проекта, их
+версии держит ``uv.lock``. Системные программы (``top``, ``htop``, ``man``, ``git``, ``node``) ищутся в ``PATH``. На
+каждой системе программа либо обязательна (нет ее - тест падает), либо явно исключена (``Program.absent`` с причиной -
+тест пропускается). Третьего нет: тихого пропуска из-за того, что чего-то не оказалось, не бывает (``require``).
 """
 
 import os
 import shutil
 import sys
-from dataclasses import dataclass
+import tempfile
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from termsnap import Key, Keys, Pause, Snapshot, Step
 
@@ -24,31 +32,26 @@ PY = sys.executable
 class Program:
     name: str
     argv: tuple[str, ...]
-    tool: str | None = None  # внешняя программа, без которой запись пропускается
+    tool: str | None = None  # системная программа, которая должна быть в PATH (Python-пакеты идут через PY)
     expect_failure: bool = False  # программа должна завершаться с ненулевым кодом (проверка pytest и ruff)
     colored: bool = True  # в выводе должны быть цвета
     input: tuple[Step, ...] = ()  # шаги сценария: строки, клавиши, паузы (только псевдотерминал)
     prompt: str | None = None  # как выглядит приглашение, когда программа ждет ввода
     settle: float = 0.5  # сколько вывод должен молчать перед следующим шагом (0 - для постоянно перерисовываемых)
     snapshot: Snapshot | None = None  # когда снять экран у программы, которая сама не завершается
-    isolated: bool = False  # без VIRTUAL_ENV: uvx-программы не должны думать, что работают в нашем окружении
-    posix_only: bool = False  # программа есть только в Linux и macOS
     external: bool = False  # чужая команда, а не скрипт проекта: тесты на ней лежат в tests/external
-
-    @property
-    def available(self) -> bool:
-        if self.posix_only and sys.platform == "win32":
-            return False
-        return self.tool is None or shutil.which(self.tool) is not None
+    env: Mapping[str, str] = field(default_factory=dict)  # добавки к окружению запуска
+    cwd: Path | None = None  # рабочий каталог: пути в выводе (pytest, ruff) не зависят от места проекта на диске
+    absent: Mapping[str, str] = field(default_factory=dict)  # sys.platform -> почему программы там не ждем
 
     @property
     def options(self) -> dict[str, Any]:
         """
         Аргументы ``termsnap.run`` для этой программы (кроме ``argv`` и ``backend``).
         """
-        env = {key: value for key, value in os.environ.items() if not self.isolated or key != "VIRTUAL_ENV"}
         return {
-            "env": env,
+            "cwd": self.cwd,
+            "env": {**os.environ, **self.env},
             "input": self.input,
             "prompt": self.prompt,
             "settle": self.settle,
@@ -58,6 +61,13 @@ class Program:
 
 def _script(name: str) -> str:
     return str(PROGRAMS / name)
+
+
+#: Python не пишет кэш байт-кода рядом со скриптами: в нем остаются пути той машины и системы, где его создали.
+_QUIET = {"PYTHONDONTWRITEBYTECODE": "1"}
+
+#: Страница читается в less без настроек пользователя: ширина задана, истории и цветов из окружения нет.
+_MAN_ENV = {"MANWIDTH": "70", "MANPAGER": "less -R", "LESSHISTFILE": "-", "LESS": "", "MAN_KEEP_FORMATTING": ""}
 
 
 REGISTRY = [
@@ -71,27 +81,23 @@ REGISTRY = [
     Program("rich_misc", (PY, _script("rich_misc.py"))),
     Program("node_inspect", ("node", _script("node_inspect.js")), tool="node", external=True),
     Program("node_ansi", ("node", _script("node_ansi.js")), tool="node", external=True),
+    Program("git_log", (PY, _script("git_history.py")), tool="git", external=True),
     Program(
         "pytest_failure",
-        # confcutdir: вложенный pytest не должен подхватывать conftest.py самих тестов проекта
-        (
-            *(PY, "-m", "pytest", _script("failing_cases.py")),
-            *("--confcutdir", str(PROGRAMS), "--color=yes", "-p", "no:cacheprovider", "-q"),
-        ),
+        # pytest.ini в каталоге программ: вложенный pytest не читает настройки и conftest.py самих тестов проекта
+        (PY, "-m", "pytest", "failing_cases.py", "--color=yes", "-p", "no:cacheprovider", "-q"),
         expect_failure=True,
         external=True,
+        cwd=PROGRAMS,
+        env=_QUIET,
     ),
     Program(
         "ruff_diagnostics",
-        (PY, "-m", "ruff", "check", _script("bad_style.py"), "--color=always", "--no-cache", "--select", "E,F,I"),
+        # --isolated: настройки ruff самого проекта (длина строки, правила) не влияют на вывод
+        (PY, "-m", "ruff", "check", "--isolated", "--no-cache", "--color=always", "--select", "E,F,I", "bad_style.py"),
         expect_failure=True,
         external=True,
-    ),
-    Program(
-        "git_log",
-        ("git", "-C", str(HERE.parent), "log", "--oneline", "--graph", "--color=always", "-n", "5"),
-        tool="git",
-        external=True,
+        cwd=PROGRAMS,
     ),
 ]
 
@@ -103,8 +109,17 @@ PTY_REGISTRY = [
     Program("long_output", (PY, _script("long_output.py"))),
 ]
 
-#: Интерактивные программы (REPL): им печатается ввод, поэтому запускаются только через ``PtyBackend``. IPython берется
-#: через ``uvx`` (при первом запуске нужна сеть), ставить его в проект не нужно.
+#: IPython запускается из окружения проекта (группа ``external`` в pyproject.toml, версия - в uv.lock), без uvx и сети.
+#: История держится в памяти, подсказки дня выключены, а каталог настроек отдельный: сессия не зависит от домашнего
+#: каталога и не оставляет в нем следов.
+_IPYTHON = (
+    *(PY, "-m", "IPython", "--no-banner"),
+    *("--HistoryManager.hist_file=:memory:", "--TerminalInteractiveShell.enable_tip=False"),
+)
+_IPYTHON_ENV = {"IPYTHONDIR": str(Path(tempfile.gettempdir()) / "termsnap-ipython")}
+_IPYTHON_PROMPT = r"In \[\d+\]:$"
+
+#: Интерактивные программы (REPL): им печатается ввод, поэтому запускаются только через ``PtyBackend``.
 INTERACTIVE = [
     Program(
         "mini_repl",
@@ -114,8 +129,7 @@ INTERACTIVE = [
     ),
     Program(
         "ipython_session",
-        ("uvx", "--quiet", "ipython"),
-        tool="uvx",
+        _IPYTHON,
         input=(
             "squares = [n ** 2 for n in range(6)]",
             "squares",
@@ -123,30 +137,28 @@ INTERACTIVE = [
             "1 / 0",
             "exit",
         ),
-        prompt=r"In \[\d+\]:$",
-        isolated=True,
+        prompt=_IPYTHON_PROMPT,
         external=True,
+        env=_IPYTHON_ENV,
     ),
     # стрелка вверх достает прошлую строку из истории, Enter ее повторяет
     Program(
         "ipython_history",
-        ("uvx", "--quiet", "ipython", "--no-banner"),
-        tool="uvx",
+        _IPYTHON,
         input=("6 * 7", Key.UP, Key.ENTER, Pause(1), "exit"),
-        prompt=r"In \[\d+\]:$",
-        isolated=True,
+        prompt=_IPYTHON_PROMPT,
         external=True,
+        env=_IPYTHON_ENV,
     ),
     # Tab открывает меню автодополнения (первый раз оно появляется не сразу): снимок ждет его появления
     Program(
         "ipython_complete",
-        ("uvx", "--quiet", "ipython", "--no-banner"),
-        tool="uvx",
+        _IPYTHON,
         input=("import math", Keys("math.s"), Key.TAB),
-        prompt=r"In \[\d+\]:$",
+        prompt=_IPYTHON_PROMPT,
         snapshot=Snapshot(when=r"sqrt", after=0.3),
-        isolated=True,
         external=True,
+        env=_IPYTHON_ENV,
     ),
     # программы, которые сами не завершаются: экран снимается в заданный момент, и программа останавливается
     Program(
@@ -156,14 +168,54 @@ INTERACTIVE = [
         settle=0,
         snapshot=Snapshot(after=0.5),
     ),
-    Program("htop", ("htop",), tool="htop", snapshot=Snapshot(when=r"Tasks:", after=2), external=True),
+    Program(
+        "htop",
+        ("htop",),
+        tool="htop",
+        snapshot=Snapshot(when=r"Tasks:", after=2),
+        external=True,
+        absent={
+            "darwin": "htop не ставится на macOS по умолчанию",
+            "win32": "htop есть только в Linux (на Windows под этим именем встречаются другие программы)",
+        },
+    ),
     Program(
         "top",
         ("top",),
         tool="top",
-        posix_only=True,
         snapshot=Snapshot(when=r"PID\s+(USER|COMMAND)", after=1),
         external=True,
+        absent={"win32": "в Windows нет top"},
+    ),
+    # страница руководства читается в less: Page Down листает вперед, поиск находит слово, q выходит
+    Program(
+        "man_scroll",
+        ("man", _script("termsnap-demo.1")),
+        tool="man",
+        input=(Key.PAGE_DOWN,),
+        snapshot=Snapshot(when=r"OPTIONS", after=0.5),
+        external=True,
+        env=_MAN_ENV,
+        absent={"win32": "в Windows нет man"},
+    ),
+    Program(
+        "man_search",
+        ("man", _script("termsnap-demo.1")),
+        tool="man",
+        input=("/needle",),
+        snapshot=Snapshot(when=r"The word needle", after=0.5),
+        external=True,
+        env=_MAN_ENV,
+        absent={"win32": "в Windows нет man"},
+    ),
+    Program(
+        "man_quit",
+        ("man", _script("termsnap-demo.1")),
+        tool="man",
+        input=(Keys("q"),),
+        external=True,
+        env=_MAN_ENV,
+        absent={"win32": "в Windows нет man"},
     ),
 ]
 
@@ -173,3 +225,52 @@ ALL_PROGRAMS = [*REGISTRY, *PTY_REGISTRY, *INTERACTIVE]
 #: ``tests/external``.
 PROJECT_PROGRAMS = [program for program in ALL_PROGRAMS if not program.external]
 EXTERNAL_PROGRAMS = [program for program in ALL_PROGRAMS if program.external]
+
+
+def require(program: Program) -> None:
+    """
+    Единственное место, где решается, запускать ли чужую программу на этой системе.
+
+    Программа либо исключена на этой системе (``Program.absent``, причина в таблице ``support_table``): тогда тест
+    пропускается и пропуск ожидаем, либо она обязательна: тогда ее отсутствие - ошибка тестов, а не пропуск.
+    """
+    reason = program.absent.get(sys.platform)
+    if reason is not None:
+        pytest.skip(f"{program.name}: {reason}")
+    if program.tool is not None and shutil.which(program.tool) is None:
+        pytest.fail(
+            f"{program.name}: нужна программа {program.tool!r}, а ее нет в PATH "
+            "(Linux: python ci/run.py system-deps; другие системы: установите ее)",
+            pytrace=False,
+        )
+
+
+SYSTEMS = {"linux": "Linux", "darwin": "macOS", "win32": "Windows"}
+
+
+def expected_skips() -> dict[str, str]:
+    """
+    Программы, которые на этой системе не запускаются, с причинами: ``{"htop": "причина"}``.
+    """
+    return {p.name: p.absent[sys.platform] for p in ALL_PROGRAMS if sys.platform in p.absent}
+
+
+def support_table() -> str:
+    """
+    Что на какой системе запускается: таблица Markdown и под ней причины исключений. Она же записана в README, а тест
+    сверяет их, поэтому правится только ``Program.absent``. Программы одной чужой команды (``node_ansi`` и
+    ``node_inspect``, три сессии ``ipython_*``) - одна строка по первому слову имени.
+    """
+    families: dict[str, list[Program]] = {}
+    for program in EXTERNAL_PROGRAMS:
+        families.setdefault(program.name.split("_")[0], []).append(program)
+    rows = [["Программа", *SYSTEMS.values()], ["---"] * (len(SYSTEMS) + 1)]
+    reasons: list[str] = []
+    for family, programs in families.items():
+        absent = {system for system in SYSTEMS if all(system in p.absent for p in programs)}
+        rows.append([f"`{family}`", *("нет" if system in absent else "да" for system in SYSTEMS)])
+        reasons += [
+            f"- `{family}`, {SYSTEMS[system]}: {programs[0].absent[system]}" for system in SYSTEMS if system in absent
+        ]
+    table = [f"| {' | '.join(row)} |" for row in rows]
+    return "\n".join([*table, "", *reasons])

@@ -8,8 +8,7 @@ ARG PYTHON=3.14
 FROM ghcr.io/astral-sh/uv:python${PYTHON}-bookworm-slim
 ARG PYTHON  # ARG до FROM после него не виден, поэтому объявляется заново
 
-# Системные пакеты берутся из того же скрипта, что и в CI. Node.js нужен примерам с node; git нарочно не ставится:
-# в образе нет истории, и пример с git log не имеет смысла (тест пропускается, если git нет).
+# Системные пакеты берутся из того же скрипта, что и в CI. Node.js нужен тестам с node.
 COPY ci/run.py /tmp/ci/run.py
 RUN python /tmp/ci/run.py system-deps && apt-get install -y --no-install-recommends nodejs ca-certificates \
     && rm -rf /var/lib/apt/lists/* /tmp/ci

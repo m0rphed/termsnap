@@ -2,9 +2,9 @@ def test_addition():
     assert 1 + 1 == 2
 
 
-def test_dict_diff():
-    expected = {"name": "Иван", "age": 30, "tags": ["a", "b"]}
-    actual = {"name": "Иван", "age": 31, "tags": ["a", "c"]}
+def test_list_diff():
+    expected = [1, 2, 3]
+    actual = [1, 2, 4]
     assert actual == expected
 
 

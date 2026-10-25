@@ -1,0 +1,44 @@
+.TH TERMSNAP-DEMO 1 "2026-01-01" "termsnap tests" "Test Manual"
+.SH NAME
+termsnap-demo \- a page that exists only to be read in a pager
+.SH SYNOPSIS
+.B termsnap-demo
+[\fB\-\-width\fR \fIN\fR] [\fB\-\-color\fR] \fIfile\fR...
+.SH DESCRIPTION
+This page is long enough to need scrolling: the first screen shows only the
+beginning, and the rest is reached with Page Down or Space.
+.PP
+The pager shows bold and underlined words with terminal attributes, so the
+screenshot keeps them as styles rather than as backspace sequences.
+.PP
+Every paragraph below repeats the same idea in different words, to make the
+page longer than a screen of thirty lines without adding anything to remember.
+.PP
+Paragraph one. The quick brown fox jumps over the lazy dog, and then jumps
+back again to check that the dog is still lazy.
+.PP
+Paragraph two. Pack my box with five dozen liquor jugs, said the fox, and the
+dog did not move.
+.PP
+Paragraph three. How vexingly quick daft zebras jump, thought the fox, who had
+never seen a zebra.
+.PP
+Paragraph four. Sphinx of black quartz, judge my vow, and the pager scrolled
+quietly to the next screen.
+.SH OPTIONS
+.TP
+.BI \-\-width " N"
+Wrap lines at \fIN\fR columns.
+.TP
+.B \-\-color
+Use colour in the output.
+.SH EXAMPLES
+.nf
+termsnap-demo --width 60 README
+termsnap-demo --color *.txt
+.fi
+.SH SEE ALSO
+.BR less (1),
+.BR man (1)
+.PP
+The word needle appears once, here, so that a search lands on this line.

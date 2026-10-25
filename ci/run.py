@@ -32,8 +32,9 @@ ROOT = Path(__file__).resolve().parent.parent
 #: Версии Python, на которых проект проверяется по умолчанию.
 PYTHONS = ("3.12", "3.13", "3.14")
 
-#: Системные пакеты Debian и Ubuntu: шрифт с кириллицей для PNG и программы, которые снимаются в тестах.
-APT_PACKAGES = ("fontconfig", "fonts-dejavu-core", "procps", "htop")
+#: Системные пакеты Debian и Ubuntu: шрифт с кириллицей для PNG и программы, которые снимаются в тестах (man не умеет
+#: форматировать страницы без groff-base, а pager для него - less).
+APT_PACKAGES = ("fontconfig", "fonts-dejavu-core", "procps", "htop", "man-db", "groff-base", "less", "git")
 
 IMAGE = "termsnap-ci"
 
@@ -78,8 +79,12 @@ def types(env: dict[str, str]) -> int:
 
 
 def test(env: dict[str, str], pytest_args: Sequence[str] = (), level: str | None = None) -> int:
+    """
+    pytest без сети: окружение уже собрано шагом ``sync``, и если тесту или ``uv`` что-то понадобилось из сети (чужая
+    программа через ``uvx``, обновление окружения), это ошибка, а не незаметная загрузка.
+    """
     marker = ["-m", level] if level else []
-    return run(["uv", "run", "pytest", "-ra", *marker, *pytest_args], env)
+    return run(["uv", "run", "pytest", "-ra", *marker, *pytest_args], env | {"UV_OFFLINE": "1"})
 
 
 def system_deps() -> int:

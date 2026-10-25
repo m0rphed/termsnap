@@ -39,8 +39,6 @@ def program(name: str) -> Program:
 
 def session(name: str) -> Capture:
     item = program(name)
-    if not item.available:
-        pytest.skip(f"нет программы {item.tool}")
     if name not in CAPTURES:
         CAPTURES[name] = run(item.argv, backend=PTY, timeout=120, **item.options)
     return CAPTURES[name]

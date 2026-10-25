@@ -29,6 +29,11 @@ requires = ["uv_build>=0.13.1,<0.14.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
+# Чужие программы, которые тесты уровня external запускают из окружения проекта (без uvx и сети): их версии держит
+# uv.lock, а tests/external/pins.py сверяет с ним ожидания. pytest, ruff и rich (см. dev) работают так же.
+external = [
+    "ipython>=9",
+]
 dev = [
     "basedpyright>=1.40.2",
     "pillow>=12",
@@ -38,6 +43,7 @@ dev = [
     "pywinpty>=3 ; sys_platform == 'win32'",
     "rich>=15.0.0",
     "ruff>=0.17.1",
+    { include-group = "external" },
 ]
 
 [tool.ruff]

@@ -14,6 +14,8 @@ const data = {
 };
 console.log(data);
 console.log(util.inspect(data, { colors: true, depth: 0 }));
-console.table([{ a: 1, b: "два" }, { a: 3, b: "четыре" }]);
 console.log("%s=%d %o", "строка", 42, { x: 1 });
-console.error(new TypeError("что-то пошло не так"));
+// без трассировки: ее строки содержат пути и внутренности Node, разные на каждой машине и в каждой версии
+const failure = new TypeError("что-то пошло не так");
+failure.stack = `${failure.name}: ${failure.message}`;
+console.error(failure);
