@@ -19,6 +19,7 @@ def run(
     *,
     cwd: str | Path | None = None,
     env: Mapping[str, str] | None = None,
+    extra_env: Mapping[str, str] | None = None,
     timeout: float | None = DEFAULT_TIMEOUT,
     color: bool = True,
     columns: int = DEFAULT_COLUMNS,
@@ -34,8 +35,12 @@ def run(
     """
     Запускает команду (без оболочки: ``["node", "app.js"]``) и возвращает ее вывод со стилями.
 
-    ``env`` - окружение процесса целиком (по умолчанию окружение текущего процесса); цвет включается или выключается
-    через ``color`` (см. ``terminal_environment``). ``encoding`` - кодировка вывода программы; нераспознанные байты
+    Окружение процесса складывается из трех слоев (подробнее в ``terminal_environment``): ``env`` - исходное окружение
+    целиком (по умолчанию окружение текущего процесса, как у ``subprocess.run``: переданный ``env`` заменяет его,
+    а не дополняет), поверх него ``extra_env`` - переменные, которые нужно добавить или заменить, остальные остаются
+    (``extra_env={"NODE_ENV": "test"}``), и поверх всего переменные терминала, которые назначает termsnap: ``TERM``,
+    ``COLUMNS``, ``LINES``, UTF-8 для Python и цвет (``color``). Переменные последнего слоя в ``extra_env`` задавать
+    нельзя - будет ``ValueError``. ``encoding`` - кодировка вывода программы; нераспознанные байты
     заменяются символом подстановки. По умолчанию команда запускается через каналы (``PipeBackend``); для программ,
     которым нужен терминал, есть ``PtyBackend``.
 
@@ -62,6 +67,7 @@ def run(
             color=color,
             columns=columns,
             rows=rows,
+            extra=extra_env,
         ),
         cwd=None if cwd is None else Path(cwd),
         timeout=timeout,

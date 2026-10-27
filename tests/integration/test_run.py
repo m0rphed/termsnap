@@ -64,6 +64,19 @@ def test_custom_environment_replaces_the_current_one():
     assert run(python("import os; print(os.environ['MY_VAR'])"), env=env).text == "42"
 
 
+def test_extra_environment_is_added_to_the_current_one(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("TERMSNAP_CURRENT", "current")
+    code = "import os; print(os.environ['TERMSNAP_CURRENT'], os.environ['MY_VAR'])"
+    assert run(python(code), extra_env={"MY_VAR": "42"}).text == "current 42"
+
+
+def test_extra_environment_is_added_on_top_of_a_custom_one_not_of_the_current_one(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("TERMSNAP_CURRENT", "current")
+    env = {key: value for key, value in os.environ.items() if key in {"PATH", "SYSTEMROOT"}} | {"BASE_VAR": "base"}
+    code = "import os; print(os.environ['BASE_VAR'], os.environ['MY_VAR'], os.environ.get('TERMSNAP_CURRENT'))"
+    assert run(python(code), env=env, extra_env={"MY_VAR": "42"}).text == "base 42 None"
+
+
 def test_utf8_output_is_decoded_even_when_the_console_is_not_utf8():
     assert run(python("print('Привет')")).text == "Привет"
 

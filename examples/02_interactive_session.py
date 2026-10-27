@@ -6,7 +6,6 @@
 Нужен ``termsnap[pty]`` и ``termsnap[png]``. Программе нужен терминал, поэтому запуск идет через ``PtyBackend``.
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -25,7 +24,7 @@ def main(out: Path) -> None:
         [sys.executable, "-q"],
         backend=PtyBackend(),
         # обычная оболочка Python: у нового интерактивного режима (3.13+) своя раскраска и свои запросы к терминалу
-        env={**os.environ, "PYTHON_BASIC_REPL": "1"},
+        extra_env={"PYTHON_BASIC_REPL": "1"},
         input=INPUT,
         prompt=PROMPT,
     )

@@ -63,3 +63,45 @@ def test_the_base_environment_is_not_modified():
     base = {"NO_COLOR": "1"}
     environment(base)
     assert base == {"NO_COLOR": "1"}
+
+
+def test_extra_variables_are_added_and_the_rest_of_the_base_environment_stays():
+    env = environment(extra={"ADDED": "1"})
+    assert (env["ADDED"], env["KEEP"], env["PATH"]) == ("1", "yes", "/bin")
+
+
+def test_extra_variables_replace_the_ones_of_the_base_environment():
+    assert environment(extra={"KEEP": "no"})["KEEP"] == "no"
+
+
+def test_extra_variables_may_be_empty_strings():
+    assert environment(extra={"EMPTY": ""})["EMPTY"] == ""
+
+
+def test_neither_base_nor_extra_is_modified():
+    base, extra = {"KEEP": "yes"}, {"ADDED": "1"}
+    environment(base, extra=extra)
+    assert (base, extra) == ({"KEEP": "yes"}, {"ADDED": "1"})
+
+
+@pytest.mark.parametrize("name", ["TERM", "COLUMNS", "LINES", "PYTHONUTF8", "PYTHONIOENCODING"])
+def test_extra_cannot_set_what_termsnap_sets_for_the_terminal(name: str):
+    with pytest.raises(ValueError, match=name):
+        environment(extra={name: "x"})
+
+
+@pytest.mark.parametrize("name", ["NO_COLOR", "FORCE_COLOR", "CLICOLOR_FORCE"])
+def test_extra_cannot_decide_the_color(name: str):
+    with pytest.raises(ValueError, match=name):
+        environment(extra={name: "1"})
+
+
+def test_the_error_names_every_managed_variable_at_once():
+    with pytest.raises(ValueError, match="COLUMNS, TERM"):
+        environment(extra={"TERM": "x", "COLUMNS": "1", "FINE": "1"})
+
+
+@pytest.mark.parametrize("value", [1, None, b"x", ["x"]])
+def test_extra_values_must_be_strings(value: object):
+    with pytest.raises(TypeError, match="MY_VAR"):
+        environment(extra={"MY_VAR": value})
